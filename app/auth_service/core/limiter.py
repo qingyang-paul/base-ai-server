@@ -7,21 +7,25 @@ import redis.asyncio as aioredis
 async def rate_limit_key_builder(request: Request):
     """
     Constructs a rate limit key based on user identity or IP address.
+    Format: {path}:{user_id|ip}
     """
+    path = request.url.path
+    
     # 1. Try to get user_id from request.state (set by AuthMiddleware)
     user_id = getattr(request.state, "user_id", None)
     if user_id:
-        return f"user:{user_id}"
+        return f"{path}:user:{user_id}"
     
     # 2. Fallback to IP address
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
-        return f"ip:{forwarded.split(',')[0].strip()}"
+        client_ip = forwarded.split(',')[0].strip()
+        return f"{path}:ip:{client_ip}"
     
     if request.client and request.client.host:
-        return f"ip:{request.client.host}"
+        return f"{path}:ip:{request.client.host}"
     
-    return "ip:unknown"
+    return f"{path}:ip:unknown"
 
 
 async def init_limiter(redis: aioredis.Redis):
@@ -30,5 +34,6 @@ async def init_limiter(redis: aioredis.Redis):
     """
     await FastAPILimiter.init(
         redis,
-        identifier=rate_limit_key_builder
+        identifier=rate_limit_key_builder,
+        prefix="rate_limit"
     )
