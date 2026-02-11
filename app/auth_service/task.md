@@ -38,7 +38,7 @@ class Settings(BaseSettings):
 
 ```
 
-/auth_service/core/model.py
+/auth_service/core/schema.py
 
 1. 定义jwt的payload
 
