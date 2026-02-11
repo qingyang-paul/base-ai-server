@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator
 
 import asyncpg
 import redis.asyncio as aioredis
-from fastapi import Request
+from fastapi import Request, HTTPException, status
 
 
 async def get_redis(request: Request) -> aioredis.Redis:
@@ -17,3 +17,15 @@ async def get_postgres(request: Request) -> AsyncGenerator[asyncpg.Connection, N
     pool: asyncpg.Pool = request.app.state.postgres
     async with pool.acquire() as connection:
         yield connection
+
+
+async def get_current_user_id(request: Request) -> str:
+    """从 request.state 获取当前用户 ID，如果不存在则抛出 401。"""
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user_id

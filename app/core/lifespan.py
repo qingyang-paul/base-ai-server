@@ -8,6 +8,8 @@ from app.core.logger import setup_logging
 from app.core.postgres import close_postgres_pool, init_postgres_pool
 from app.core.redis import close_redis_pool, init_redis_pool
 from app.core.telemetry import setup_telemetry, shutdown_telemetry
+from app.auth_service.core.limiter import init_limiter
+
 
 
 @asynccontextmanager
@@ -27,7 +29,11 @@ async def lifespan(app: FastAPI):
     app.state.redis = redis_pool
     app.state.postgres = postgres_pool
 
+    # 初始化限流器
+    await init_limiter(redis_pool)
+
     logger.info("Application started")
+
 
     yield
 
