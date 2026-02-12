@@ -100,7 +100,8 @@ async def db_pool(postgres_container):
                 refresh_token_version INTEGER DEFAULT 0,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                last_login_at TIMESTAMP WITH TIME ZONE
+                last_login_at TIMESTAMP WITH TIME ZONE,
+                password_changed_at TIMESTAMP WITH TIME ZONE
             );
             
             CREATE TABLE IF NOT EXISTS refresh_tokens (
