@@ -9,6 +9,7 @@ from app.core.postgres import close_postgres_pool, init_postgres_pool
 from app.core.redis import close_redis_pool, init_redis_pool
 from app.core.telemetry import setup_telemetry, shutdown_telemetry
 from app.auth_service.core.limiter import init_limiter
+from app.taskiq import broker
 
 
 
@@ -32,6 +33,10 @@ async def lifespan(app: FastAPI):
     # 初始化限流器
     await init_limiter(redis_pool)
 
+    # 启动 Taskiq Broker
+    if not broker.is_worker_process:
+        await broker.startup()
+
     logger.info("Application started")
 
 
@@ -42,3 +47,4 @@ async def lifespan(app: FastAPI):
     await close_redis_pool(redis_pool)
     await close_postgres_pool(postgres_pool)
     shutdown_telemetry(provider)
+    await broker.shutdown()
