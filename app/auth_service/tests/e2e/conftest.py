@@ -52,14 +52,7 @@ from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
 
 from app.main import app
-from app.main import app
 from app.dependencies import get_postgres, get_redis
-from unittest.mock import patch, AsyncMock
-
-@pytest_asyncio.fixture(scope="function", autouse=True)
-async def mock_email_task():
-    with patch("app.auth_service.auth_service.send_email_task.kiq", new_callable=AsyncMock) as mock:
-        yield mock
 
 @pytest_asyncio.fixture(scope="session")
 async def postgres_container():
@@ -85,8 +78,6 @@ async def db_pool(postgres_container):
     pool = await asyncpg.create_pool(dsn)
     
     # Initialize DB (Schema)
-    # Since we removed SQLAlchemy, we need to create tables using raw SQL or migration tool.
-    # We need the table `users_auth_info`.
     async with pool.acquire() as conn:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS users_auth_info (
@@ -124,7 +115,6 @@ async def db_pool(postgres_container):
 @pytest_asyncio.fixture(scope="function")
 async def db_connection(db_pool):
     async with db_pool.acquire() as conn:
-        # Start transaction for rollback?
         tr = conn.transaction()
         await tr.start()
         yield conn
@@ -137,14 +127,11 @@ async def redis_client(redis_container):
     yield client
     await client.close()
 
-
 @pytest_asyncio.fixture(scope="function")
 async def client(db_connection, redis_client):
     app.dependency_overrides[get_postgres] = lambda: db_connection
     app.dependency_overrides[get_redis] = lambda: redis_client
     
-    # Activate lifespan for FastAPILimiter and other startup events
-    # We must use the app instance to trigger its lifespan
     async with app.router.lifespan_context(app):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             yield ac

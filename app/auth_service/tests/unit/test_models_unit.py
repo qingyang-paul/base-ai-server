@@ -1,6 +1,6 @@
 import pytest
 from pydantic import ValidationError
-from app.auth_service.core.model import (
+from app.auth_service.core.schema import (
     BaseTokenPayload, 
     AccessTokenPayload, 
     RefreshTokenPayload, 

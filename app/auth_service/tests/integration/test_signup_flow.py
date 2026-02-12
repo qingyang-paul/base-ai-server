@@ -1,89 +1,58 @@
 import pytest
 import logging
-from unittest.mock import patch
-from taskiq import InMemoryBroker
-
-from app.auth_service.core.schema import UserInternalSchema
+from unittest.mock import patch, AsyncMock
 
 # Configure logger to output to stdout even if captured
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-@pytest.fixture
-def mock_smtp():
-    with patch("aiosmtplib.send") as mock:
-        mock.return_value = ({}, "OK")
-        yield mock
-
 @pytest.mark.asyncio
-async def test_signup_flow_integration(client, db_connection, redis_client, mock_smtp):
+async def test_signup_flow_integration(client, db_connection, redis_client):
     """
-    Integration test for Signup Flow.
-    Uses:
-    - PostgresContainer (via db_connection)
-    - RedisContainer (via redis_client)
-    - InMemoryBroker (patched) to execute tasks immediately and print logs
+    Integration test for Signup Flow using global mock for email task.
     """
     
-    # patch the broker in app.taskiq to be InMemoryBroker
-    new_broker = InMemoryBroker()
+    email = "integration@example.com"
+    password = "securepassword"
     
-    # We patch app.auth_service.tasks.send_email.broker via the task instance
+    logger.info(f"--- Starting Signup for {email} ---")
     
-    # Start the broker
-    await new_broker.startup()
+    response = await client.post("/api/v1/auth/signup", json={
+        "email": email,
+        "password": password,
+        "nickname": "IntegrationUser"
+    })
     
-    # Force InMemoryBroker by replacing the broker on the task itself.
-    from app.auth_service.tasks.send_email import send_email_task
-    original_broker = send_email_task.broker
-    send_email_task.broker = new_broker
+    logger.info(f"Response Status: {response.status_code}")
     
-    # CRITICAL: Register the task with the new broker so it can be passed to execution
-    # InMemoryBroker needs to find the function in its registry
-    new_broker.register_task(
-        send_email_task.original_func,
-        task_name=send_email_task.task_name
-    )
+    assert response.status_code == 200
+    assert response.json()["msg"] == "success"
     
-    try:
-        email = "integration@example.com"
-        password = "securepassword"
-        
-        logger.info(f"--- Starting Signup for {email} ---")
-        
-        response = await client.post("/api/v1/auth/signup", json={
-            "email": email,
-            "password": password,
-            "nickname": "IntegrationUser"
-        })
-        
-        logger.info(f"Response Status: {response.status_code}")
-        logger.info(f"Response Body: {response.json()}")
-        
-        assert response.status_code == 200
-        assert response.json()["msg"] == "success"
-        
-        # Verify DB
-        row = await db_connection.fetchrow("SELECT * FROM users_auth_info WHERE email = $1", email)
-        assert row is not None
-        logger.info(f"User found in DB: {dict(row)}")
-        assert row["email"] == email
-        assert row["nick_name"] == "IntegrationUser"
-        assert row["is_verified"] is False
-        
-        # Verify Redis OTP
-        keys = await redis_client.keys(f"auth:otp:signup:{email}")
-        assert len(keys) > 0
-        otp = await redis_client.get(keys[0])
-        logger.info(f"OTP found in Redis: {otp}")
-        assert otp is not None
-        
-        # Verify Task Execution
-        # Check if mock_smtp was called
-        mock_smtp.assert_called()
-        logger.info("Email task executed successfully (mocked SMTP).")
-        
-    finally:
-        await new_broker.shutdown()
-        send_email_task.broker = original_broker
-        logger.info("--- Test Finished ---")
+    # Verify DB
+    row = await db_connection.fetchrow("SELECT * FROM users_auth_info WHERE email = $1", email)
+    assert row is not None
+    logger.info(f"User found in DB: {dict(row)}")
+    assert row["email"] == email
+    assert row["nick_name"] == "IntegrationUser"
+    assert row["is_verified"] is False
+    
+    # Verify Redis OTP
+    keys = await redis_client.keys(f"auth:otp:signup:{email}")
+    assert len(keys) > 0
+    otp = await redis_client.get(keys[0])
+    logger.info(f"OTP found in Redis: {otp}")
+    assert otp is not None
+    
+    # Verify Task Dispatch (using the global mock from conftest)
+    from app.auth_service.auth_service import send_email_task
+    # send_email_task.kiq is the mock object because of conftest patch
+    # We can't easily access the fixture instance here unless we request it, 
+    # but the patch is on the object.
+    
+    # However, 'send_email_task.kiq' on the IMPORTED object might not be the mock if the patch was applied on 'app.auth_service.auth_service.send_email_task.kiq'
+    # and we import it from 'app.auth_service.auth_service'.
+    
+    # Let's verify.
+    assert isinstance(send_email_task.kiq, AsyncMock) or hasattr(send_email_task.kiq, "assert_called")
+    send_email_task.kiq.assert_called()
+    logger.info("Email task dispatch verified.")

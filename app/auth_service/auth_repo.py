@@ -81,3 +81,15 @@ class AuthRepo:
     async def get_otp_ttl(self, email: str, purpose: str) -> int:
         key = f"auth:otp:{purpose}:{email}"
         return await self.redis.ttl(key)
+
+    async def create_refresh_token(self, token_data: dict):
+        columns = list(token_data.keys())
+        values = list(token_data.values())
+        placeholders = [f"${i+1}" for i in range(len(values))]
+        
+        query = f"""
+            INSERT INTO refresh_tokens ({', '.join(columns)})
+            VALUES ({', '.join(placeholders)})
+        """
+        await self.connection.execute(query, *values)
+        logger.debug(f"Created refresh token for user {token_data.get('user_id')}")

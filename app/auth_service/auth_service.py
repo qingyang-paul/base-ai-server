@@ -11,8 +11,11 @@ from app.auth_service.core.exceptions import (
     OTPRateLimitError,
     InvalidOTPError,
     UserNotFoundError,
+    InvalidPasswordError,
+    AccountLockedError,
+    EmailNotVerifiedError,
 )
-from app.auth_service.core.security import get_password_hash, create_token
+from app.auth_service.core.security import get_password_hash, create_token, verify_password
 from app.auth_service.tasks.send_email import send_email_task
 from app.auth_service.core.config import settings as auth_settings
 
@@ -129,3 +132,99 @@ class AuthService:
                 "refresh_token": refresh_token,
                 "token_type": "bearer",
             }
+
+    async def handle_login(self, email: str, password: str, ip_address: str = "0.0.0.0", user_agent: str = "unknown"):
+        # 1. Authenticate
+        user = await self._authenticate_user(email, password)
+        
+        # 2. Generate Tokens
+        curr_time = datetime.now(timezone.utc)
+        tokens = self._generate_tokens(user, curr_time)
+        
+        # 3. Record Login Activity (Async DB write)
+        await self._record_login_activity(
+            user=user, 
+            refresh_token_payload=tokens["refresh_payload"], 
+            ip_address=ip_address, 
+            user_agent=user_agent,
+            curr_time=curr_time
+        )
+        
+        return {
+            "access_token": tokens["access_token"],
+            "refresh_token": tokens["refresh_token"],
+            "token_type": "bearer",
+        }
+
+    async def _authenticate_user(self, email: str, password: str):
+        # Retrieve user
+        user = await self.repo.get_user_by_email(email)
+        if not user:
+            # To prevent user enumeration, we might want to fake verification time, 
+            # but for now we follow the spec to raise generic or specific error.
+            # Security Note: Ideally return "Invalid credentials" for both UserNotFound and InvalidPassword
+            raise UserNotFoundError()
+            
+        # Verify Password
+        if not verify_password(password, user.hashed_password):
+            raise InvalidPasswordError()
+            
+        # Check Status
+        if not user.is_verified:
+            raise EmailNotVerifiedError()
+            
+        if not user.is_active:
+            raise AccountLockedError()
+            
+        return user
+
+    def _generate_tokens(self, user, curr_time: datetime):
+        # Access Token
+        access_payload = {
+            "sub": str(user.id),
+            "role": user.role,
+            "token_version": user.refresh_token_version,
+            "type": "access",
+            "jti": str(uuid.uuid4()),
+        }
+        access_token = create_token(access_payload, expires_delta=timedelta(minutes=auth_settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+        
+        # Refresh Token
+        family_id = str(uuid.uuid4()) # New login = New Family
+        refresh_payload = {
+            "sub": str(user.id),
+            "role": user.role,
+            "token_version": user.refresh_token_version,
+            "type": "refresh",
+            "family_id": family_id,
+            "jti": str(uuid.uuid4()),
+        }
+        refresh_token = create_token(refresh_payload, expires_delta=timedelta(days=auth_settings.REFRESH_TOKEN_EXPIRE_DAYS))
+        
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "access_payload": access_payload,
+            "refresh_payload": refresh_payload
+        }
+
+    async def _record_login_activity(self, user, refresh_token_payload, ip_address: str, user_agent: str, curr_time: datetime):
+        async with self.repo.connection.transaction():
+            # Update Last Login
+            updates = UserUpdateSchema(last_login_at=curr_time)
+            await self.repo.update_user(user.id, updates)
+            
+            # Save Refresh Token
+            expires_at = curr_time + timedelta(days=auth_settings.REFRESH_TOKEN_EXPIRE_DAYS)
+            token_data = {
+                "jti": refresh_token_payload["jti"],
+                "user_id": str(user.id),
+                "family_id": refresh_token_payload["family_id"],
+                "token_version": refresh_token_payload["token_version"],
+                "expires_at": expires_at,
+                "created_at": curr_time,
+                "ip_address": ip_address,
+                "device_name": user_agent,
+                # parent_jti is None for new login
+            }
+            await self.repo.create_refresh_token(token_data)
