@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
-from typing import Literal
+from typing import Literal, Optional
 import time
+from datetime import datetime
 
 # 1. Base Payload containing common fields
 class BaseTokenPayload(BaseModel):
@@ -25,6 +26,7 @@ class RefreshTokenPayload(BaseTokenPayload):
     
     # Required for Token Rotation
     family_id: str 
+    parent_jti: Optional[str] = None
 
 # 4. Magic Link / OTP Token
 class MagicLinkPayload(BaseTokenPayload):
@@ -32,3 +34,32 @@ class MagicLinkPayload(BaseTokenPayload):
     type: Literal["magic_link", "password_reset", "verify_email"]
     
     email: str  # Email is required as user might not be logged in/registered
+
+# --- User Schemas ---
+
+from uuid import UUID
+
+class UserUpdateSchema(BaseModel):
+    is_verified: Optional[bool] = None
+    hashed_password: Optional[str] = None
+    nick_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+    refresh_token_version: Optional[int] = None
+    last_login_at: Optional[datetime] = None
+    password_changed_at: Optional[datetime] = None
+
+class UserInternalSchema(BaseModel):
+    id: UUID
+    email: str
+    hashed_password: str
+    nick_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    is_verified: bool
+    is_active: bool
+    role: str
+    refresh_token_version: int
+    created_at: datetime
+    updated_at: datetime
+    last_login_at: Optional[datetime] = None

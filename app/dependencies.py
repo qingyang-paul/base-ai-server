@@ -29,3 +29,22 @@ async def get_current_user_id(request: Request) -> str:
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user_id
+
+from fastapi import Depends
+from asyncpg import Connection
+from redis.asyncio import Redis
+
+from app.auth_service.auth_repo import AuthRepo
+from app.auth_service.auth_service import AuthService
+
+async def get_auth_repo(
+    connection: Connection = Depends(get_postgres),
+    redis: Redis = Depends(get_redis)
+) -> AuthRepo:
+    return AuthRepo(connection, redis)
+
+async def get_auth_service(
+    repo: AuthRepo = Depends(get_auth_repo)
+) -> AuthService:
+    return AuthService(repo)
+

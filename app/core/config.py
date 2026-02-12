@@ -96,3 +96,25 @@ class Settings(BaseSettings):
         )
 
     model_config = {"env_file": ".env", "extra": "ignore"}
+
+    # SMTP
+    smtp_host: str = "localhost"
+    smtp_port: int = 1025
+    smtp_user: str = ""
+    smtp_password: str = ""
+    emails_from_email: str = "info@baseai.com"
+    emails_from_name: str = "BaseAI"
+
+    @property
+    def smtp_config(self):
+        return {
+            "host": self.smtp_host,
+            "port": self.smtp_port,
+            "user": self.smtp_user,
+            "password": self.smtp_password,
+            "from_email": self.emails_from_email,
+            "from_name": self.emails_from_name,
+        }
+
+settings = Settings()
+
