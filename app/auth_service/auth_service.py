@@ -508,3 +508,40 @@ class AuthService:
              
              await self.repo.update_user(user.id, updates)
              logger.info(f"Password reset successfully for user {user.id}")
+
+    async def handle_change_password(self, user_id: str, old_password: str, new_password: str):
+        logger.info(f"Change password attempt for user {user_id}")
+        
+        async with self.repo.connection.transaction():
+            # 1. Get User
+            user = await self.repo.get_user_by_id(user_id)
+            if not user:
+                logger.error(f"User not found during change password: {user_id}")
+                raise UserNotFoundError()
+                
+            # 2. Verify Old Password
+            if not verify_password(old_password, user.hashed_password):
+                logger.warning(f"Invalid old password for user {user_id}")
+                raise InvalidPasswordError()
+                
+            # 3. Hash New Password
+            hashed_pw = get_password_hash(new_password)
+            
+            # 4. Update User (Password + Token Version + Timestamps)
+            new_version = user.refresh_token_version + 1
+            curr_time = datetime.now(timezone.utc)
+            
+            updates = UserUpdateSchema(
+                hashed_password=hashed_pw,
+                refresh_token_version=new_version,
+                password_changed_at=curr_time,
+                updated_at=curr_time
+            )
+            
+            await self.repo.update_user(user.id, updates)
+            
+            # Note: We don't explicitly revoke tokens in refresh_tokens table here 
+            # because the version increment invalidates them logicially during usage.
+            # However, if immediate revocation is required, we could call revoke_all_tokens_for_user.
+            
+            logger.info(f"Password changed successfully for user {user_id}")
