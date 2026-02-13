@@ -4,6 +4,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from app.auth_service.auth_service import AuthService
 from app.dependencies import get_auth_service
+from app.auth_service.core.dependencies import get_client_info, ClientInfo
 
 router = APIRouter()
 
@@ -13,17 +14,14 @@ class LoginRequest(BaseModel):
 
 @router.post("/login", status_code=status.HTTP_200_OK, dependencies=[Depends(RateLimiter(times=5, seconds=60))])
 async def login(
-    request: Request,
     login_data: LoginRequest,
+    client_info: ClientInfo = Depends(get_client_info),
     service: AuthService = Depends(get_auth_service)
 ):
-    val_ip = request.client.host if request.client else "0.0.0.0"
-    val_ua = request.headers.get("user-agent", "unknown")
-    
     tokens = await service.handle_login(
         email=login_data.email, 
         password=login_data.password,
-        ip_address=val_ip,
-        user_agent=val_ua
+        ip_address=client_info.ip_address,
+        user_agent=client_info.device_name
     )
     return tokens

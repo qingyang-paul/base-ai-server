@@ -126,6 +126,21 @@ class AuthService:
             }
             refresh_token = create_token(refresh_payload, expires_delta=timedelta(days=auth_settings.REFRESH_TOKEN_EXPIRE_DAYS))
 
+            # Save Refresh Token
+            curr_time = datetime.now(timezone.utc)
+            expires_at = curr_time + timedelta(days=auth_settings.REFRESH_TOKEN_EXPIRE_DAYS)
+            token_data = {
+                "jti": refresh_payload["jti"],
+                "user_id": str(user.id),
+                "family_id": refresh_payload["family_id"],
+                "token_version": refresh_payload["token_version"],
+                "expires_at": expires_at,
+                "created_at": curr_time,
+                "ip_address": "0.0.0.0",
+                "device_name": "unknown"
+            }
+            await self.repo.create_refresh_token(token_data)
+
             # 5. Delete OTP
             await self.repo.delete_otp(email, purpose="signup")
             
@@ -230,6 +245,158 @@ class AuthService:
                 # parent_jti is None for new login
             }
             await self.repo.create_refresh_token(token_data)
+
+    async def handle_refresh_token(self, refresh_token: str, ip_address: str = "0.0.0.0", device_name: str = "unknown") -> Dict[str, str]:
+        # 1. Decode & Basic Validation
+        try:
+            payload = decode_token(refresh_token)
+        except Exception:
+            # Log the attempt details for security auditing
+            logger.warning(f"Invalid refresh token attempt from IP: {ip_address}, Device: {device_name}")
+            raise InvalidResetTokenError() # Using Generic Error for security
+
+        if payload.get("type") != "refresh":
+            logger.warning(f"Token type mismatch from IP: {ip_address}")
+            raise InvalidResetTokenError()
+
+        jti = payload.get("jti")
+        sub = payload.get("sub")
+        
+        reuse_error = False
+        
+        async with self.repo.connection.transaction():
+            # 2. Check DB Status
+            rt_record = await self.repo.get_refresh_token_by_jti(jti)
+            if not rt_record:
+                # Token not in DB? Either expired/cleaned up or forged.
+                logger.warning(f"Refresh token not found in DB: {jti}")
+                raise InvalidResetTokenError()
+                
+            # 3. Check Revocation
+            if rt_record.get("revoked_at"):
+                # Explicitly revoked
+                logger.warning(f"Refresh token revoked: {jti}")
+                raise InvalidResetTokenError()
+
+            # 4. Check Replacement (Reuse Detection)
+            replaced_at = rt_record.get("replaced_at")
+            if replaced_at:
+                # Ensure timezone awareness
+                if replaced_at.tzinfo is None:
+                    replaced_at = replaced_at.replace(tzinfo=timezone.utc)
+                
+                now = datetime.now(timezone.utc)
+                time_since_replacement = (now - replaced_at).total_seconds()
+                
+                if time_since_replacement > 30: 
+                    # > 30s: Reuse Attack -> Revoke Everything
+                    logger.warning(f"Refresh Token Reuse Attack detected for user {sub}. JTI: {jti}")
+                    await self.repo.revoke_all_tokens_for_user(sub)
+                    reuse_error = True
+                    # Exit block to commit revocation
+                else:
+                    # < 30s: Grace Period -> Return existing valid tokens
+                    family_id = rt_record.get("family_id")
+                    latest_token = await self.repo.get_latest_token_in_family(family_id)
+                    
+                    if not latest_token:
+                         raise InvalidResetTokenError()
+                         
+                    # Reconstruct Access Token (NEW)
+                    user = await self.repo.get_user_by_id(sub)
+                    if not user:
+                        raise UserNotFoundError()
+                        
+                    access_payload = {
+                        "sub": str(user.id),
+                        "role": user.role,
+                        "token_version": user.refresh_token_version,
+                        "type": "access",
+                        "jti": str(uuid.uuid4()),
+                    }
+                    access_token = create_token(access_payload, expires_delta=timedelta(minutes=auth_settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+                    
+                    # Reconstruct Refresh Token (Using LATEST JTI)
+                    refresh_payload = {
+                        "sub": str(user.id),
+                        "role": user.role,
+                        "token_version": user.refresh_token_version,
+                        "type": "refresh",
+                        "family_id": family_id,
+                        "jti": latest_token["jti"],
+                    }
+                    new_refresh_token = create_token(refresh_payload, expires_delta=timedelta(days=auth_settings.REFRESH_TOKEN_EXPIRE_DAYS))
+                    
+                    return {
+                        "access_token": access_token,
+                        "refresh_token": new_refresh_token,
+                        "token_type": "bearer",
+                    }
+            
+            # 5. Normal Rotation (Valid, Active Token)
+            # Only proceed if NOT replaced and NOT reuse error
+            if not replaced_at and not reuse_error:
+                user = await self.repo.get_user_by_id(sub)
+                if not user:
+                    logger.warning(f"User not found: {sub}")
+                    raise UserNotFoundError()
+    
+                # Check User Token Version
+                if user.refresh_token_version != payload.get("token_version"):
+                    logger.warning(f"Token version mismatch: user={user.refresh_token_version}, token={payload.get('token_version')}")
+                    raise InvalidResetTokenError()
+    
+                # Mark current as replaced
+                current_time = datetime.now(timezone.utc)
+                await self.repo.update_refresh_token(jti, {"replaced_at": current_time})
+                
+                # Generate NEW Tokens
+                access_payload = {
+                    "sub": str(user.id),
+                    "role": user.role,
+                    "token_version": user.refresh_token_version,
+                    "type": "access",
+                    "jti": str(uuid.uuid4()),
+                }
+                access_token = create_token(access_payload, expires_delta=timedelta(minutes=auth_settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+                
+                family_id = payload.get("family_id")
+                new_jti = str(uuid.uuid4())
+                refresh_payload = {
+                    "sub": str(user.id),
+                    "role": user.role,
+                    "token_version": user.refresh_token_version,
+                    "type": "refresh",
+                    "family_id": family_id,
+                    "jti": new_jti,
+                }
+                refresh_token = create_token(refresh_payload, expires_delta=timedelta(days=auth_settings.REFRESH_TOKEN_EXPIRE_DAYS))
+                
+                # Persist New Refresh Token
+                expires_at = current_time + timedelta(days=auth_settings.REFRESH_TOKEN_EXPIRE_DAYS)
+                token_data = {
+                    "jti": new_jti,
+                    "user_id": str(user.id),
+                    "family_id": family_id,
+                    "token_version": user.refresh_token_version,
+                    "expires_at": expires_at,
+                    "created_at": current_time,
+                    "ip_address": ip_address,
+                    "device_name": device_name,
+                    "parent_jti": jti,
+                }
+                await self.repo.create_refresh_token(token_data)
+                
+                return {
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                    "token_type": "bearer",
+                }
+
+        # Raise exception OUTSIDE transaction block
+        if reuse_error:
+            raise InvalidResetTokenError()
+ 
 
     async def handle_forgot_password(self, email: str):
         logger.info(f"Forgot password request for {email}")

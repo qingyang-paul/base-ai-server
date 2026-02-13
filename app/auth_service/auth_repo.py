@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from redis.asyncio import Redis
@@ -15,6 +15,13 @@ class AuthRepo:
     async def get_user_by_email(self, email: str) -> Optional[UserInternalSchema]:
         query = "SELECT * FROM users_auth_info WHERE email = $1"
         row = await self.connection.fetchrow(query, email)
+        if row:
+            return UserInternalSchema(**dict(row))
+        return None
+
+    async def get_user_by_id(self, user_id: str) -> Optional[UserInternalSchema]:
+        query = "SELECT * FROM users_auth_info WHERE id = $1"
+        row = await self.connection.fetchrow(query, user_id)
         if row:
             return UserInternalSchema(**dict(row))
         return None
@@ -93,3 +100,44 @@ class AuthRepo:
         """
         await self.connection.execute(query, *values)
         logger.debug(f"Created refresh token for user {token_data.get('user_id')}")
+
+    async def get_refresh_token_by_jti(self, jti: str) -> Optional[dict]:
+        query = "SELECT * FROM refresh_tokens WHERE jti = $1"
+        row = await self.connection.fetchrow(query, jti)
+        return dict(row) if row else None
+
+    async def update_refresh_token(self, jti: str, updates: dict):
+        if not updates:
+            return
+            
+        set_clauses = []
+        values = []
+        values.append(jti)  # $1
+        
+        for i, (key, value) in enumerate(updates.items()):
+            set_clauses.append(f"{key} = ${i+2}")
+            values.append(value)
+            
+        query = f"""
+            UPDATE refresh_tokens 
+            SET {', '.join(set_clauses)}
+            WHERE jti = $1
+        """
+        await self.connection.execute(query, *values)
+
+    async def revoke_all_tokens_for_user(self, user_id: str):
+        revoked_at = datetime.now(timezone.utc)
+        query = "UPDATE refresh_tokens SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL"
+        await self.connection.execute(query, revoked_at, user_id)
+        
+        # Option 2: Also bump user token_version (invalidates all Access Tokens too)
+        # This requires the user table to have token_version
+        query_user = "UPDATE users_auth_info SET refresh_token_version = refresh_token_version + 1, updated_at = NOW() WHERE id = $1"
+        await self.connection.execute(query_user, user_id)
+        logger.warning(f"Revoked all tokens for user {user_id}")
+
+    async def get_latest_token_in_family(self, family_id: str) -> Optional[dict]:
+        # Get the most recently created token in this family
+        query = "SELECT * FROM refresh_tokens WHERE family_id = $1 ORDER BY created_at DESC LIMIT 1"
+        row = await self.connection.fetchrow(query, family_id)
+        return dict(row) if row else None
