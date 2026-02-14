@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, status, Body
 from pydantic import BaseModel, Field
+from loguru import logger
 
 from app.dependencies import get_current_user_id, get_auth_service
 from app.auth_service.auth_service import AuthService
@@ -21,9 +22,11 @@ async def change_password(
     
     This will invalidate all existing sessions (Refresh Tokens) for security.
     """
+    logger.info(f"Change password request received for user {user_id}")
     await auth_service.handle_change_password(
         user_id=user_id,
         old_password=request.old_password,
         new_password=request.new_password
     )
+    logger.info(f"Change password successful for user {user_id}")
     return {"msg": "Password changed successfully"}

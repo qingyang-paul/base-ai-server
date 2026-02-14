@@ -180,19 +180,24 @@ class AuthService:
             # To prevent user enumeration, we might want to fake verification time, 
             # but for now we follow the spec to raise generic or specific error.
             # Security Note: Ideally return "Invalid credentials" for both UserNotFound and InvalidPassword
+            logger.warning(f"Authentication failed: User {email} not found")
             raise UserNotFoundError()
             
         # Verify Password
         if not verify_password(password, user.hashed_password):
+            logger.warning(f"Authentication failed: Invalid password for user {email}")
             raise InvalidPasswordError()
             
         # Check Status
         if not user.is_verified:
+            logger.warning(f"Authentication failed: Email {email} not verified")
             raise EmailNotVerifiedError()
             
         if not user.is_active:
+            logger.warning(f"Authentication failed: Account {email} is locked/inactive")
             raise AccountLockedError()
             
+        logger.info(f"User {email} authenticated successfully")
         return user
 
     def _generate_tokens(self, user, curr_time: datetime):
@@ -247,6 +252,7 @@ class AuthService:
             await self.repo.create_refresh_token(token_data)
 
     async def handle_refresh_token(self, refresh_token: str, ip_address: str = "0.0.0.0", device_name: str = "unknown") -> Dict[str, str]:
+        logger.info(f"Handle refresh token request from IP: {ip_address}")
         # 1. Decode & Basic Validation
         try:
             payload = decode_token(refresh_token)
@@ -300,11 +306,13 @@ class AuthService:
                     latest_token = await self.repo.get_latest_token_in_family(family_id)
                     
                     if not latest_token:
+                         logger.warning(f"Grace period: No tokens found in family {family_id}")
                          raise InvalidResetTokenError()
                          
                     # Reconstruct Access Token (NEW)
                     user = await self.repo.get_user_by_id(sub)
                     if not user:
+                        logger.error(f"Grace period: User {sub} not found during token reconstruction")
                         raise UserNotFoundError()
                         
                     access_payload = {

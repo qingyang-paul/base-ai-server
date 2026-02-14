@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel
 from typing import Optional
+from loguru import logger
 
 from app.auth_service.auth_service import AuthService
 from app.dependencies import get_auth_service
@@ -27,6 +28,7 @@ async def refresh_token(
     """
     Refresh Access Token and rotate Refresh Token.
     """
+    logger.info(f"Refresh token request received from {client_info.ip_address}")
     return await auth_service.handle_refresh_token(
         refresh_token=request.refresh_token,
         ip_address=client_info.ip_address,

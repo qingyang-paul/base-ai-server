@@ -16,14 +16,18 @@ class AuthRepo:
         query = "SELECT * FROM users_auth_info WHERE email = $1"
         row = await self.connection.fetchrow(query, email)
         if row:
+            logger.debug(f"User found by email: {email}")
             return UserInternalSchema(**dict(row))
+        logger.debug(f"User not found by email: {email}")
         return None
 
     async def get_user_by_id(self, user_id: str) -> Optional[UserInternalSchema]:
         query = "SELECT * FROM users_auth_info WHERE id = $1"
         row = await self.connection.fetchrow(query, user_id)
         if row:
+            logger.debug(f"User found by ID: {user_id}")
             return UserInternalSchema(**dict(row))
+        logger.debug(f"User not found by ID: {user_id}")
         return None
 
     async def create_user(self, user_data: dict) -> UserInternalSchema:
@@ -39,6 +43,7 @@ class AuthRepo:
         """
         logger.info(f"Creating user with email: {user_data.get('email')}")
         row = await self.connection.fetchrow(query, *values)
+        logger.debug(f"User created with ID: {row['id']}")
         return UserInternalSchema(**dict(row))
     
     async def update_user(self, user_id: str, updates: UserUpdateSchema):
@@ -104,7 +109,11 @@ class AuthRepo:
     async def get_refresh_token_by_jti(self, jti: str) -> Optional[dict]:
         query = "SELECT * FROM refresh_tokens WHERE jti = $1"
         row = await self.connection.fetchrow(query, jti)
-        return dict(row) if row else None
+        if row:
+            logger.debug(f"Refresh token found for JTI: {jti}")
+            return dict(row)
+        logger.debug(f"Refresh token not found for JTI: {jti}")
+        return None
 
     async def update_refresh_token(self, jti: str, updates: dict):
         if not updates:
@@ -124,6 +133,7 @@ class AuthRepo:
             WHERE jti = $1
         """
         await self.connection.execute(query, *values)
+        logger.debug(f"Updated refresh token {jti} with {list(updates.keys())}")
 
     async def revoke_all_tokens_for_user(self, user_id: str):
         revoked_at = datetime.now(timezone.utc)
@@ -140,4 +150,8 @@ class AuthRepo:
         # Get the most recently created token in this family
         query = "SELECT * FROM refresh_tokens WHERE family_id = $1 ORDER BY created_at DESC LIMIT 1"
         row = await self.connection.fetchrow(query, family_id)
-        return dict(row) if row else None
+        if row:
+             logger.debug(f"Latest token found for family {family_id}: {row['jti']}")
+             return dict(row)
+        logger.debug(f"No tokens found for family {family_id}")
+        return None

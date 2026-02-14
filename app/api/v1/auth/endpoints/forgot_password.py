@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, status, Request, Body
 from fastapi_limiter.depends import RateLimiter
 from pydantic import BaseModel, EmailStr, Field
 
+from loguru import logger
 from app.auth_service.auth_service import AuthService
 from app.dependencies import get_auth_service
 
@@ -27,6 +28,7 @@ async def forgot_password(
     request: ForgotPasswordRequest,
     service: AuthService = Depends(get_auth_service)
 ):
+    logger.info(f"Forgot password request received - email: {request.email}")
     await service.handle_forgot_password(request.email)
     # Return vague message to prevent enumeration
     return {"msg": f"If an account exists for {request.email}, you will receive a verification code shortly."}
@@ -40,6 +42,7 @@ async def verify_reset_code(
     request: VerifyResetCodeRequest,
     service: AuthService = Depends(get_auth_service)
 ):
+    logger.info(f"Verify reset code request received - email: {request.email}")
     result = await service.handle_verify_reset_code(request.email, request.code)
     # Returns {"otp_token": ...}
     return result
@@ -53,5 +56,6 @@ async def reset_password(
     request: ResetPasswordRequest,
     service: AuthService = Depends(get_auth_service)
 ):
+    logger.info("Reset password request received")
     await service.handle_reset_password(request.reset_token, request.new_password)
     return {"msg": "Password reset successfully."}
