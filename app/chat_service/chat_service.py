@@ -1,8 +1,10 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 import json
 import asyncio
-from app.chat_service.core.llm_tools import registry
-from app.chat_service.core.schema import LLMTool
+from app.chat_service.core.llm_tools import registry, FuncName
+from app.chat_service.core.schema import (
+    LLMTool, RoleType, LLMMessage, ChatHistory, LLMPayload, UserQuery, SessionContext, SOPPreference
+)
 
 class ChatService:
     def __init__(self):
@@ -18,6 +20,61 @@ class ChatService:
                 "parameters": tool.args_schema.model_json_schema(),
             }
         }
+
+    def build_llm_payload(
+        self,
+        system_prompt: str,
+        chat_history: ChatHistory,
+        user_query: UserQuery,
+        session_context: SessionContext,
+        allowed_tools: List[FuncName]
+    ) -> LLMPayload:
+        """
+        Assemble the payload for LLM from history, query, and context.
+        Levels:
+        1. Inject SOP preferences into system prompt.
+        2. Combine System + History + UserQuery.
+        3. Filter and Format Tools.
+        """
+        # 1. Inject SOP preferences
+        final_system_prompt = system_prompt
+        if session_context.user_sop_preferences:
+            sop_text = "\n\nUser SOP Preferences:\n"
+            for sop in session_context.user_sop_preferences:
+                sop_text += f"- [{sop.subject}]: {sop.content}\n"
+            final_system_prompt += sop_text
+
+        # 2. Assemble Messages
+        messages: List[LLMMessage] = []
+        
+        # System Message
+        messages.append(LLMMessage(role=RoleType.SYSTEM, content=final_system_prompt))
+        
+        # History
+        messages.extend(chat_history.messages)
+        
+        # User Query
+        # Note: UserQuery is a subclass of LLMMessage, but we might want to ensure it's treated as one.
+        # It has role=USER fixed.
+        messages.append(user_query)
+
+        # 3. Handle Tools
+        llm_tools = []
+        for tool_name in allowed_tools:
+            # tool_name is enum FuncName, but registry keys are strings (values of enum)
+            # FuncName is str Enum, so iterating it gives values? No, List[FuncName] gives Enum members.
+            # We need the value.
+            name_str = tool_name.value if hasattr(tool_name, 'value') else tool_name
+            tool = self.tools.get(name_str)
+            if tool:
+                llm_tools.append(self._tool_to_llm_schema(tool))
+        
+        return LLMPayload(
+            messages=messages,
+            tools=llm_tools if llm_tools else None,
+            tool_choice="auto" if llm_tools else None
+        )
+
 
     async def run_tool(self, tool_name: str, args_json: str, context_kwargs: Dict[str, Any] = None) -> str:
         """
