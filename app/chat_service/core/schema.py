@@ -3,6 +3,7 @@ from enum import Enum
 from typing import Callable, Type, Any, Optional, List, Dict, Union, Literal
 from uuid import UUID
 from pydantic import BaseModel, Field
+from app.chat_service.core.config import settings
 
 @dataclass
 class LLMTool:
@@ -69,3 +70,72 @@ class SOPPreference(BaseModel):
 class SessionContext(BaseModel):
     user_sop_preferences: List[SOPPreference]
 
+
+# ==========================================
+# Level 4: Stream Types & Configuration
+# ==========================================
+
+class StreamEventType(str, Enum):
+    MESSAGE_CHUNK = "message_chunk"
+    TOOL_CALL_CHUNK = "tool_call_chunk"
+    STATS = "statistic"
+    ERROR = "error"
+    STATUS = "status"
+
+class BaseStreamReply(BaseModel):
+    event_type: StreamEventType
+    seq_id: int = Field(..., description="Sequence ID for ordering")
+
+class MessageChunkEvent(BaseStreamReply):
+    event_type: Literal[StreamEventType.MESSAGE_CHUNK] = StreamEventType.MESSAGE_CHUNK
+    content: str
+
+class ToolCallChunkEvent(BaseStreamReply):
+    event_type: Literal[StreamEventType.TOOL_CALL_CHUNK] = StreamEventType.TOOL_CALL_CHUNK
+    tool_name: Optional[str] = None
+    args_chunk: str
+    index: int = 0
+
+class StatisticEvent(BaseStreamReply):
+    event_type: Literal[StreamEventType.STATS] = StreamEventType.STATS
+    input_tokens: int
+    output_tokens: int
+    response_duration: float
+
+class StatusEvent(BaseStreamReply):
+    event_type: Literal[StreamEventType.STATUS] = StreamEventType.STATUS
+    message: str
+    tool_name: Optional[str] = None
+    status: Literal["running", "success", "failed"] = "running"
+
+StreamReply = Union[
+    MessageChunkEvent, 
+    ToolCallChunkEvent, 
+    StatisticEvent, 
+    StatusEvent
+]
+
+class OpenAIRuntimeConfig(BaseModel):
+    provider: Literal["openai"] = "openai"
+    model: str = Field(default_factory=lambda: settings.openai.model)
+    temperature: float = Field(default_factory=lambda: settings.openai.temperature)
+    max_tokens: int = Field(default_factory=lambda: settings.openai.max_tokens)
+    frequency_penalty: float = Field(default_factory=lambda: settings.openai.frequency_penalty)
+
+class GeminiRuntimeConfig(BaseModel):
+    provider: Literal["gemini"] = "gemini"
+    model: str = Field(default_factory=lambda: settings.gemini.model)
+    temperature: float = Field(default_factory=lambda: settings.gemini.temperature)
+    top_k: int = Field(default_factory=lambda: settings.gemini.top_k)
+    max_output_tokens: int = Field(default_factory=lambda: settings.gemini.max_output_tokens)
+
+class QwenRuntimeConfig(BaseModel):
+    provider: Literal["qwen"] = "qwen"
+    model: str = Field(default_factory=lambda: settings.qwen.model)
+    temperature: float = Field(default_factory=lambda: settings.qwen.temperature)
+    max_tokens: int = Field(default_factory=lambda: settings.qwen.max_tokens)
+    frequency_penalty: float = Field(default_factory=lambda: settings.qwen.frequency_penalty)
+    top_k: int = Field(default_factory=lambda: settings.qwen.top_k)
+    max_output_tokens: int = Field(default_factory=lambda: settings.qwen.max_output_tokens)
+# Union for runtime config
+GenerationConfig = Union[OpenAIRuntimeConfig, GeminiRuntimeConfig, QwenRuntimeConfig]

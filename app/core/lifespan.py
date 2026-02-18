@@ -37,6 +37,38 @@ async def lifespan(app: FastAPI):
     if not broker.is_worker_process:
         await broker.startup()
 
+    # ================================
+    # 1. 动态注册你需要的模型客户端 (Level 3)
+    # ================================
+    try:
+        from app.chat_service.core.config import settings as llm_settings
+        from app.chat_service.core.llm_client_manager import llm_manager
+        from app.chat_service.core.llm_providers.openai_provider import OpenAICompatibleProvider
+        from app.chat_service.core.llm_providers.gemini_provider import GeminiProvider
+
+        # 注册原版 OpenAI
+        openai_config = getattr(llm_settings, 'openai', None)
+        if openai_config:
+            llm_manager.register("openai", OpenAICompatibleProvider(openai_config))
+        
+        # 注册 Qwen (使用 OpenAI 兼容协议)
+        qwen_config = getattr(llm_settings, 'qwen', None)
+        if qwen_config:
+            llm_manager.register("qwen", OpenAICompatibleProvider(qwen_config))
+        
+        # 注册 Gemini
+        gemini_config = getattr(llm_settings, 'gemini', None)
+        if gemini_config:
+            llm_manager.register("gemini", GeminiProvider(gemini_config))
+
+        # ================================
+        # 2. 统一初始化
+        # ================================
+        logger.info("🚀 正在初始化所有 LLM 客户端...")
+        await llm_manager.startup()
+    except Exception as e:
+        logger.error(f"Failed to initialize LLM clients: {e}")
+
     logger.info("Application started")
 
 
@@ -46,5 +78,16 @@ async def lifespan(app: FastAPI):
     logger.info("Application stopping")
     await close_redis_pool(redis_pool)
     await close_postgres_pool(postgres_pool)
+    
+    # ================================
+    # 3. 统一销毁
+    # ================================
+    try:
+        from app.chat_service.core.llm_client_manager import llm_manager
+        logger.info("📉 正在销毁所有 LLM 客户端...")
+        await llm_manager.shutdown()
+    except Exception as e:
+        logger.error(f"Failed to shutdown LLM clients: {e}")
+
     shutdown_telemetry(provider)
     await broker.shutdown()

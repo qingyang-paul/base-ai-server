@@ -1,14 +1,39 @@
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, AsyncGenerator
 import json
 import asyncio
 from app.chat_service.core.llm_tools import registry, FuncName
 from app.chat_service.core.schema import (
-    LLMTool, RoleType, LLMMessage, ChatHistory, LLMPayload, UserQuery, SessionContext, SOPPreference
+    LLMTool, RoleType, LLMMessage, ChatHistory, LLMPayload, UserQuery, SessionContext, SOPPreference,
+    GenerationConfig, StreamReply
 )
+from app.chat_service.core.llm_client_manager import llm_manager
+
+from app.chat_service.core.exceptions import ProviderNotFoundError
 
 class ChatService:
     def __init__(self):
         self.tools = registry.tools
+
+    async def stream_reply(
+        self, 
+        runtime_config: GenerationConfig, 
+        payload: LLMPayload
+    ) -> AsyncGenerator[StreamReply, None]:
+        """
+        极其纯净的代理层。根据请求的提供商，直接将任务分发给对应的 Provider 插件。
+        """
+        
+        # 1. 从注册中心获取对应的业务处理插件（比如 OpenAICompatibleProvider）
+        provider_name = runtime_config.provider
+        
+        try:
+           provider = llm_manager.get_provider(provider_name)
+        except ValueError:
+            raise ProviderNotFoundError(f"Provider '{provider_name}' not found. Available: {list(llm_manager.providers.keys())}")
+        
+        # 2. 调用插件的 stream_reply 方法，原样透传给上层
+        async for event in provider.stream_reply(config=runtime_config, payload=payload):
+            yield event
 
     def _tool_to_llm_schema(self, tool: LLMTool) -> Dict[str, Any]:
         """Convert LLMTool to OpenAI function schema format."""
