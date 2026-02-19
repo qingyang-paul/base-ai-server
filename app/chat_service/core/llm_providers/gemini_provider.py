@@ -1,7 +1,7 @@
 import time
 import json
-import logging
 from typing import AsyncGenerator, List, Dict, Any
+from loguru import logger
 
 # V2 SDK
 from google import genai
@@ -22,7 +22,6 @@ from app.chat_service.core.schema import (
     LLMMessage
 )
 
-logger = logging.getLogger(__name__)
 
 class GeminiProvider(BaseLLMProvider):
     def __init__(self, config: LLMClientConfig):
@@ -39,7 +38,7 @@ class GeminiProvider(BaseLLMProvider):
             api_key=self.config.api_key
             # http_options={'api_version': 'v1alpha'} # Removed to use default (v1beta/v1)
         )
-        print(f"✅ Gemini Client (google-genai) 初始化完成")
+        logger.info(f"✅ Gemini Client (google-genai) 初始化完成")
 
     async def shutdown(self):
         """Gemini SDK Client cleanup if needed"""

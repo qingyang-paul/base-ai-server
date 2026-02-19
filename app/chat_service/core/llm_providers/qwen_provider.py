@@ -1,5 +1,6 @@
 from app.chat_service.core.llm_providers.openai_provider import OpenAICompatibleProvider
 from app.chat_service.core.config import LLMClientConfig
+from loguru import logger
 
 class QwenProvider(OpenAICompatibleProvider):
     """
@@ -8,7 +9,7 @@ class QwenProvider(OpenAICompatibleProvider):
     """
     def __init__(self, config: LLMClientConfig):
         super().__init__(config)
-        print(f"✅ Qwen 客户端初始化 (Base URL: {self.config.base_url})")
+        logger.info(f"✅ Qwen 客户端初始化 (Base URL: {self.config.base_url})")
 
     async def startup(self):
         await super().startup()

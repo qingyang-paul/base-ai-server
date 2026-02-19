@@ -1,6 +1,7 @@
 import time
 from typing import AsyncGenerator
 import httpx
+from loguru import logger
 from openai import AsyncOpenAI
 from app.chat_service.core.llm_providers.base import BaseLLMProvider
 from app.chat_service.core.config import LLMClientConfig
@@ -41,12 +42,12 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             kwargs["base_url"] = self.config.base_url
             
         self._sdk = AsyncOpenAI(**kwargs)
-        print(f"✅ OpenAI 兼容客户端启动成功 (Base URL: {self.config.base_url or '官方默认'})")
+        logger.info(f"✅ OpenAI 兼容客户端启动成功 (Base URL: {self.config.base_url or '官方默认'})")
 
     async def shutdown(self):
         if self._http_client:
             await self._http_client.aclose()
-            print("🛑 OpenAI 兼容客户端已关闭")
+            logger.info("🛑 OpenAI 兼容客户端已关闭")
 
     def get_sdk(self) -> AsyncOpenAI:
         if not self._sdk:
@@ -84,6 +85,8 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             kwargs["tools"] = payload.tools
             if payload.tool_choice:
                 kwargs["tool_choice"] = payload.tool_choice
+
+        logger.info(f"Initiating OpenAI stream for model: {config.model}")
 
         # 3. 发起原生 SDK 请求
         sdk = self.get_sdk()

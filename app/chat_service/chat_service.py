@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional, Union, AsyncGenerator
 import json
 import asyncio
+from loguru import logger
 from app.chat_service.core.llm_tools import registry, FuncName
 from app.chat_service.core.schema import (
     LLMTool, RoleType, LLMMessage, ChatHistory, LLMPayload, UserQuery, SessionContext, SOPPreference,
@@ -33,8 +34,13 @@ class ChatService:
             raise ProviderNotFoundError(f"Provider '{provider_name}' not found. Available: {list(llm_manager.providers.keys())}")
         
         # 2. 调用插件的 stream_reply 方法，原样透传给上层
-        async for event in provider.stream_reply(config=runtime_config, payload=payload):
-            yield event
+        logger.info(f"Using provider: {provider_name} for model: {runtime_config.model}")
+        try:
+            async for event in provider.stream_reply(config=runtime_config, payload=payload):
+                yield event
+        except Exception as e:
+            logger.error(f"Stream reply failed: {e}")
+            raise e
 
     def _tool_to_llm_schema(self, tool: LLMTool) -> Dict[str, Any]:
         """Convert LLMTool to OpenAI function schema format."""
@@ -119,9 +125,11 @@ class ChatService:
 
         tool = self.tools.get(tool_name)
         if not tool:
+            logger.warning(f"Tool '{tool_name}' not found.")
             return f"Error: Tool '{tool_name}' not found."
 
         try:
+            logger.info(f"Executing tool: {tool_name} with args: {args_json}")
             # 1. Parse arguments (JSON string -> Dict)
             try:
                 args_dict = json.loads(args_json)
@@ -168,6 +176,7 @@ class ChatService:
             return str(result)
 
         except Exception as e:
+            logger.error(f"Error executing tool '{tool_name}': {e}")
             return f"Error executing tool '{tool_name}': {str(e)}"
 
     async def chat_stream_with_tools(
@@ -178,6 +187,8 @@ class ChatService:
         current_payload = payload
         loop_count = 0
         global_seq_id = int(time.time() * 1000)
+        
+        logger.info(f"Starting agent loop for model: {runtime_config.model}")
         
         # Get provider instance
         provider_name = runtime_config.provider

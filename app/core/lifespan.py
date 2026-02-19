@@ -23,7 +23,9 @@ async def lifespan(app: FastAPI):
     provider = setup_telemetry(settings.telemetry, app)
 
     # 启动连接池
+    logger.info("Initializing Redis pool...")
     redis_pool = await init_redis_pool(settings.redis)
+    logger.info("Initializing Postgres pool...")
     postgres_pool = await init_postgres_pool(settings.postgres)
 
     # 挂载到 app.state 供 dependency 使用
@@ -31,10 +33,12 @@ async def lifespan(app: FastAPI):
     app.state.postgres = postgres_pool
 
     # 初始化限流器
+    logger.info("Initializing Rate Limiter...")
     await init_limiter(redis_pool)
 
     # 启动 Taskiq Broker
     if not broker.is_worker_process:
+        logger.info("Starting Taskiq Broker...")
         await broker.startup()
 
     # ================================
@@ -77,7 +81,9 @@ async def lifespan(app: FastAPI):
 
     # 关闭连接池
     logger.info("Application stopping")
+    logger.info("Closing Redis pool...")
     await close_redis_pool(redis_pool)
+    logger.info("Closing Postgres pool...")
     await close_postgres_pool(postgres_pool)
     
     # ================================
@@ -91,4 +97,5 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to shutdown LLM clients: {e}")
 
     shutdown_telemetry(provider)
+    logger.info("Shutting down Taskiq Broker...")
     await broker.shutdown()

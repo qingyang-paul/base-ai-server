@@ -1,5 +1,6 @@
 from enum import Enum
 from typing import Dict, Type, Callable, Optional
+from loguru import logger
 from pydantic import BaseModel
 from app.chat_service.core.schema import LLMTool
 
@@ -25,6 +26,7 @@ class ToolRegistry:
                 func=func
             )
             self.tools[name] = tool
+            logger.info(f"Registered tool: {name}")
             return func
         return decorator
 
