@@ -4,12 +4,13 @@ import asyncio
 from app.chat_service.core.llm_tools import registry, FuncName
 from app.chat_service.core.schema import (
     LLMTool, RoleType, LLMMessage, ChatHistory, LLMPayload, UserQuery, SessionContext, SOPPreference,
-    GenerationConfig, StreamReply
+    GenerationConfig, StreamReply, StatusEvent, StreamEventType, ToolCallChunkEvent, MessageChunkEvent, ToolCall, ToolCallFunction
 )
 from app.chat_service.core.llm_client_manager import llm_manager
 
 from app.chat_service.core.exceptions import ProviderNotFoundError
 
+import time
 class ChatService:
     def __init__(self):
         self.tools = registry.tools
@@ -168,3 +169,109 @@ class ChatService:
 
         except Exception as e:
             return f"Error executing tool '{tool_name}': {str(e)}"
+
+    async def chat_stream_with_tools(
+        self, runtime_config: GenerationConfig, payload: LLMPayload, context_kwargs: dict = None, max_loops: int = 5
+    ) -> AsyncGenerator[StreamReply, None]:
+        """Level 5: Agentic Loop (Core State Machine)"""
+        if context_kwargs is None: context_kwargs = {}
+        current_payload = payload
+        loop_count = 0
+        global_seq_id = int(time.time() * 1000)
+        
+        # Get provider instance
+        provider_name = runtime_config.provider
+        try:
+           provider = llm_manager.get_provider(provider_name)
+        except ValueError:
+            raise ProviderNotFoundError(f"Provider '{provider_name}' not found. Available: {list(llm_manager.providers.keys())}")
+
+
+        while loop_count < max_loops:
+            loop_count += 1
+            tool_calls_acc = {}
+
+            if loop_count > 1:
+                global_seq_id += 1
+                yield StatusEvent(seq_id=global_seq_id, message="正在思考总结...", status="running")
+
+            assistant_content = ""
+            # Receive standard event stream from provider
+            async for event in provider.stream_reply(runtime_config, current_payload):
+                global_seq_id += 1
+                # Override seq_id to ensure global ordering
+                event.seq_id = global_seq_id
+                yield event
+
+                if isinstance(event, MessageChunkEvent):
+                    if event.content:
+                        assistant_content += event.content
+
+                if isinstance(event, ToolCallChunkEvent):
+                    idx = event.index
+                    if idx not in tool_calls_acc:
+                        tool_calls_acc[idx] = {
+                            "id": f"call_{idx}_{global_seq_id}", 
+                            "name": event.tool_name or "", 
+                            "arguments": event.args_chunk or "",
+                            "vendor_extra": event.vendor_extra_chunk or {}
+                        }
+                    else:
+                        if event.tool_name: tool_calls_acc[idx]["name"] += event.tool_name
+                        if event.args_chunk: tool_calls_acc[idx]["arguments"] += event.args_chunk
+                        if event.vendor_extra_chunk:
+                            if "vendor_extra" not in tool_calls_acc[idx]:
+                                tool_calls_acc[idx]["vendor_extra"] = {}
+                            tool_calls_acc[idx]["vendor_extra"].update(event.vendor_extra_chunk)
+
+            if not tool_calls_acc:
+                 # If we have content but no tools, we should also update history?
+                 # Actually, usually if no tools, we break and the loop ends,
+                 # but for multi-turn chat without tools, we might want to preserve history if we were to continue.
+                 # But here, if no tools, we just break.
+                 # The caller (client) has received the stream.
+                 # The 'payload' is local to this request.
+                 break
+
+            # Execute tools
+            assistant_tool_msg = LLMMessage(role=RoleType.ASSISTANT, content=assistant_content, tool_calls=[])
+            tool_results_msgs = []
+
+            for idx, data in tool_calls_acc.items():
+                t_name = data["name"]
+                t_args = data["arguments"]
+                t_vendor_extra = data.get("vendor_extra")
+                
+                # Create ToolCall object for history
+                # We need a unique ID for the tool call
+                tool_call_id = data["id"]
+                assistant_tool_msg.tool_calls.append(ToolCall(
+                    id=tool_call_id, 
+                    function=ToolCallFunction(name=t_name, arguments=t_args, vendor_extra=t_vendor_extra)
+                ))
+                
+                # Get description for display
+                desc = t_name # Default to name
+                tool_def = self.tools.get(t_name)
+                if tool_def:
+                    desc = tool_def.description
+
+                global_seq_id += 1
+                yield StatusEvent(seq_id=global_seq_id, message=f"正在 {desc}...", tool_name=t_name, status="running")
+                
+                # Execute the tool
+                res_str = await self.run_tool(t_name, t_args, context_kwargs)
+                
+                global_seq_id += 1
+                yield StatusEvent(seq_id=global_seq_id, message=f"已完成 {desc}", tool_name=t_name, status="success")
+                
+                tool_results_msgs.append(LLMMessage(role=RoleType.TOOL, tool_call_id=tool_call_id, name=t_name, content=res_str))
+
+            # Update payload with assistant's tool calls and tool results
+            current_payload.messages.append(assistant_tool_msg)
+            current_payload.messages.extend(tool_results_msgs)
+            
+        else:
+            # Loop finished without breaking (max loops reached)
+             yield MessageChunkEvent(seq_id=99999, content="\n\n[系统] 操作超限，已强制停止。")
+

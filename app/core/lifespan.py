@@ -45,16 +45,17 @@ async def lifespan(app: FastAPI):
         from app.chat_service.core.llm_client_manager import llm_manager
         from app.chat_service.core.llm_providers.openai_provider import OpenAICompatibleProvider
         from app.chat_service.core.llm_providers.gemini_provider import GeminiProvider
+        from app.chat_service.core.llm_providers.qwen_provider import QwenProvider
 
         # 注册原版 OpenAI
         openai_config = getattr(llm_settings, 'openai', None)
         if openai_config:
             llm_manager.register("openai", OpenAICompatibleProvider(openai_config))
         
-        # 注册 Qwen (使用 OpenAI 兼容协议)
+        # 注册 Qwen (使用独立 QwenProvider)
         qwen_config = getattr(llm_settings, 'qwen', None)
         if qwen_config:
-            llm_manager.register("qwen", OpenAICompatibleProvider(qwen_config))
+            llm_manager.register("qwen", QwenProvider(qwen_config))
         
         # 注册 Gemini
         gemini_config = getattr(llm_settings, 'gemini', None)

@@ -1,0 +1,32 @@
+[StreamEventType.TOOL_CALL_CHUNK] Seq=1771502593835 Tool=calculate_sum Args=
+[StreamEventType.TOOL_CALL_CHUNK] Seq=1771502593836 Tool=None Args= {"a": 12345, "b": 67890}
+[StreamEventType.STATS] Seq=1771502593837 In=0 Out=0
+[StreamEventType.STATUS] Seq=1771502593838 Status=running Msg=正在 Calculates the sum of two numbers...
+[StreamEventType.STATUS] Seq=1771502593839 Status=success Msg=已完成 Calculates the sum of two numbers
+[StreamEventType.STATUS] Seq=1771502593840 Status=running Msg=正在思考总结...
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593841 Content='The'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593842 Content=' sum'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593843 Content=' of'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593844 Content=' '
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593845 Content='1'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593846 Content='2'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593847 Content='3'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593848 Content='4'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593849 Content='5'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593850 Content=' and'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593851 Content=' '
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593852 Content='6'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593853 Content='7'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593854 Content='8'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593855 Content='9'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593856 Content='0'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593857 Content=' is'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593858 Content=' **'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593859 Content='8'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593860 Content='0'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593861 Content='2'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593862 Content='3'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593863 Content='5'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593864 Content='**'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502593865 Content='.'
+[StreamEventType.STATS] Seq=1771502593866 In=0 Out=25

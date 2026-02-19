@@ -21,6 +21,7 @@ class RoleType(str, Enum):
 class ToolCallFunction(BaseModel):
     name: str
     arguments: str  # JSON string
+    vendor_extra: Optional[Dict[str, Any]] = None
 
 class ToolCall(BaseModel):
     id: str
@@ -95,6 +96,7 @@ class ToolCallChunkEvent(BaseStreamReply):
     tool_name: Optional[str] = None
     args_chunk: str
     index: int = 0
+    vendor_extra_chunk: Optional[Dict[str, Any]] = None
 
 class StatisticEvent(BaseStreamReply):
     event_type: Literal[StreamEventType.STATS] = StreamEventType.STATS

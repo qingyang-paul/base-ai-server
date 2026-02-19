@@ -10,7 +10,11 @@ from app.chat_service.core.llm_providers.gemini_provider import GeminiProvider
 # ==========================
 
 def test_llm_client_config():
-    config = LLMClientConfig(api_key="sk-test", base_url="http://test.com")
+    config = LLMClientConfig(
+        api_key="sk-test", 
+        base_url="http://test.com",
+        model="gpt-4-test"
+    )
     assert config.api_key == "sk-test"
     assert config.base_url == "http://test.com"
     assert config.timeout == 30.0 # default
@@ -52,7 +56,10 @@ def test_llm_manager_get_sdk_not_found():
 
 @pytest.mark.asyncio
 async def test_openai_provider_startup_shutdown():
-    config = LLMClientConfig(api_key="sk-test")
+    config = LLMClientConfig(
+        api_key="sk-test",
+        model="gpt-4-test"
+    )
     provider = OpenAICompatibleProvider(config)
     
     with patch("app.chat_service.core.llm_providers.openai_provider.httpx.AsyncClient") as mock_client_cls, \
@@ -76,10 +83,13 @@ async def test_openai_provider_startup_shutdown():
 
 @pytest.mark.asyncio
 async def test_gemini_provider_startup():
-    config = LLMClientConfig(api_key="gemini-key")
+    config = LLMClientConfig(
+        api_key="test-key",
+        model="gpt-4-test"
+    )
     provider = GeminiProvider(config)
     
     with patch("app.chat_service.core.llm_providers.gemini_provider.genai") as mock_genai:
         await provider.startup()
-        mock_genai.configure.assert_called_with(api_key="gemini-key")
+        mock_genai.configure.assert_called_with(api_key="test-key")
         assert provider.get_sdk() == mock_genai

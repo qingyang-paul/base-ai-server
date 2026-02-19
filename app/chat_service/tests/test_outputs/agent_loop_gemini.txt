@@ -1,0 +1,9 @@
+[StreamEventType.TOOL_CALL_CHUNK] Seq=1771502595031 Tool=calculate_sum Args={"b": 67890, "a": 12345}
+[StreamEventType.STATS] Seq=1771502595032 In=0 Out=0
+[StreamEventType.STATUS] Seq=1771502595033 Status=running Msg=正在 Calculates the sum of two numbers...
+[StreamEventType.STATUS] Seq=1771502595034 Status=success Msg=已完成 Calculates the sum of two numbers
+[StreamEventType.STATUS] Seq=1771502595035 Status=running Msg=正在思考总结...
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502595036 Content='The'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502595037 Content=' sum of 12345 and 67890 is'
+[StreamEventType.MESSAGE_CHUNK] Seq=1771502595038 Content=' 80235.'
+[StreamEventType.STATS] Seq=1771502595039 In=0 Out=3
