@@ -3,8 +3,11 @@ from fastapi_limiter.depends import RateLimiter
 from pydantic import BaseModel, EmailStr, Field
 
 from loguru import logger
+import uuid
 from app.auth_service.auth_service import AuthService
 from app.dependencies import get_auth_service
+from app.auth_service.core.security import decode_token
+from app.subscription_service.tasks.init_user_subscription import init_user_subscription_task
 
 router = APIRouter()
 
@@ -36,5 +39,15 @@ async def verify_email(
 ):
     logger.info(f"Verify email request received for {request.email}")
     tokens = await service.handle_verify_email(request.email, request.code)
+    
+    try:
+        payload = decode_token(tokens["access_token"])
+        user_id = uuid.UUID(payload["sub"])
+        # Schedule subscription initialization in background
+        await init_user_subscription_task.kiq(str(user_id))
+        logger.info(f"Subscription initialization task scheduled for user {user_id}")
+    except Exception as e:
+        logger.error(f"Failed to schedule subscription logic after verify email: {e}")
+        
     logger.info(f"Verify email successful for {request.email}")
     return tokens
