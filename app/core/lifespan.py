@@ -10,9 +10,7 @@ from app.core.redis import close_redis_pool, init_redis_pool
 from app.core.telemetry import setup_telemetry, shutdown_telemetry
 from app.auth_service.core.limiter import init_limiter
 from app.taskiq import broker
-
-
-
+from sqlalchemy.ext.asyncio import create_async_engine
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """管理 logger、telemetry、Redis、Postgres 的生命周期。"""
@@ -32,6 +30,16 @@ async def lifespan(app: FastAPI):
     app.state.redis = redis_pool
     app.state.postgres = postgres_pool
 
+    # 初始化 SQLAlchemy Engine
+    logger.info("Initializing SQLAlchemy AsyncEngine...")
+    sqlalchemy_dsn = f"postgresql+asyncpg://{settings.postgres.user}:{settings.postgres.password}@{settings.postgres.host}:{settings.postgres.port}/{settings.postgres.database}"
+    db_engine = create_async_engine(
+        sqlalchemy_dsn,
+        pool_size=settings.postgres.min_pool_size,
+        max_overflow=settings.postgres.max_pool_size - settings.postgres.min_pool_size if settings.postgres.max_pool_size > settings.postgres.min_pool_size else 0,
+    )
+    app.state.db_engine = db_engine
+
     # 初始化限流器
     logger.info("Initializing Rate Limiter...")
     await init_limiter(redis_pool)
@@ -39,6 +47,10 @@ async def lifespan(app: FastAPI):
     # 启动 Taskiq Broker
     if not broker.is_worker_process:
         logger.info("Starting Taskiq Broker...")
+        # Import tasks so they are registered with the broker before it starts up
+        import app.auth_service.tasks.send_email
+        import app.subscription_service.tasks.init_user_subscription
+        import app.subscription_service.tasks.reset_expired_subscriptions_and_credits
         await broker.startup()
 
     # ================================
@@ -85,6 +97,8 @@ async def lifespan(app: FastAPI):
     await close_redis_pool(redis_pool)
     logger.info("Closing Postgres pool...")
     await close_postgres_pool(postgres_pool)
+    logger.info("Disposing SQLAlchemy Engine...")
+    await db_engine.dispose()
     
     # ================================
     # 3. 统一销毁

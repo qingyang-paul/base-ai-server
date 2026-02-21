@@ -1,20 +1,32 @@
 from datetime import datetime, timezone
 from typing import Optional
+from contextlib import asynccontextmanager
 
 from redis.asyncio import Redis
-from asyncpg import Connection
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 from loguru import logger
 
 from app.auth_service.core.schema import UserInternalSchema, UserUpdateSchema
 
 class AuthRepo:
-    def __init__(self, connection: Connection, redis: Redis):
-        self.connection = connection
+    def __init__(self, session: AsyncSession, redis: Redis):
+        self.session = session
         self.redis = redis
 
+    @asynccontextmanager
+    async def transaction(self):
+        try:
+            yield
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+
     async def get_user_by_email(self, email: str) -> Optional[UserInternalSchema]:
-        query = "SELECT * FROM users_auth_info WHERE email = $1"
-        row = await self.connection.fetchrow(query, email)
+        query = "SELECT * FROM users_auth_info WHERE email = :email"
+        result = await self.session.execute(text(query), {"email": email})
+        row = result.mappings().first()
         if row:
             logger.debug(f"User found by email: {email}")
             return UserInternalSchema(**dict(row))
@@ -22,8 +34,9 @@ class AuthRepo:
         return None
 
     async def get_user_by_id(self, user_id: str) -> Optional[UserInternalSchema]:
-        query = "SELECT * FROM users_auth_info WHERE id = $1"
-        row = await self.connection.fetchrow(query, user_id)
+        query = "SELECT * FROM users_auth_info WHERE id = :id"
+        result = await self.session.execute(text(query), {"id": user_id})
+        row = result.mappings().first()
         if row:
             logger.debug(f"User found by ID: {user_id}")
             return UserInternalSchema(**dict(row))
@@ -31,10 +44,8 @@ class AuthRepo:
         return None
 
     async def create_user(self, user_data: dict) -> UserInternalSchema:
-        # Construct INSERT query
         columns = list(user_data.keys())
-        values = list(user_data.values())
-        placeholders = [f"${i+1}" for i in range(len(values))]
+        placeholders = [f":{col}" for col in columns]
         
         query = f"""
             INSERT INTO users_auth_info ({', '.join(columns)})
@@ -42,34 +53,32 @@ class AuthRepo:
             RETURNING *
         """
         logger.info(f"Creating user with email: {user_data.get('email')}")
-        row = await self.connection.fetchrow(query, *values)
+        result = await self.session.execute(text(query), user_data)
+        row = result.mappings().first()
         logger.debug(f"User created with ID: {row['id']}")
         return UserInternalSchema(**dict(row))
     
     async def update_user(self, user_id: str, updates: UserUpdateSchema):
-        # Generate dynamic update query
         update_data = updates.model_dump(exclude_unset=True)
         if not update_data:
             return
 
         set_clauses = []
-        values = []
-        # user_id is $1
-        values.append(user_id)
+        params = {"id": user_id}
         
-        for i, (key, value) in enumerate(update_data.items()):
-            set_clauses.append(f"{key} = ${i+2}")
-            values.append(value)
+        for key, value in update_data.items():
+            param_key = f"val_{key}"
+            set_clauses.append(f"{key} = :{param_key}")
+            params[param_key] = value
             
-        # Add updated_at
         set_clauses.append("updated_at = NOW()")
 
         query = f"""
             UPDATE users_auth_info 
             SET {', '.join(set_clauses)}
-            WHERE id = $1
+            WHERE id = :id
         """
-        await self.connection.execute(query, *values)
+        await self.session.execute(text(query), params)
         logger.info(f"Updated user {user_id} with {list(update_data.keys())}")
 
     async def save_otp(self, email: str, code: str, purpose: str):
@@ -96,19 +105,19 @@ class AuthRepo:
 
     async def create_refresh_token(self, token_data: dict):
         columns = list(token_data.keys())
-        values = list(token_data.values())
-        placeholders = [f"${i+1}" for i in range(len(values))]
+        placeholders = [f":{col}" for col in columns]
         
         query = f"""
             INSERT INTO refresh_tokens ({', '.join(columns)})
             VALUES ({', '.join(placeholders)})
         """
-        await self.connection.execute(query, *values)
+        await self.session.execute(text(query), token_data)
         logger.debug(f"Created refresh token for user {token_data.get('user_id')}")
 
     async def get_refresh_token_by_jti(self, jti: str) -> Optional[dict]:
-        query = "SELECT * FROM refresh_tokens WHERE jti = $1"
-        row = await self.connection.fetchrow(query, jti)
+        query = "SELECT * FROM refresh_tokens WHERE jti = :jti"
+        result = await self.session.execute(text(query), {"jti": jti})
+        row = result.mappings().first()
         if row:
             logger.debug(f"Refresh token found for JTI: {jti}")
             return dict(row)
@@ -120,36 +129,37 @@ class AuthRepo:
             return
             
         set_clauses = []
-        values = []
-        values.append(jti)  # $1
+        params = {"jti": jti}
         
-        for i, (key, value) in enumerate(updates.items()):
-            set_clauses.append(f"{key} = ${i+2}")
-            values.append(value)
+        for key, value in updates.items():
+            param_key = f"val_{key}"
+            set_clauses.append(f"{key} = :{param_key}")
+            params[param_key] = value
             
         query = f"""
             UPDATE refresh_tokens 
             SET {', '.join(set_clauses)}
-            WHERE jti = $1
+            WHERE jti = :jti
         """
-        await self.connection.execute(query, *values)
+        await self.session.execute(text(query), params)
         logger.debug(f"Updated refresh token {jti} with {list(updates.keys())}")
 
     async def revoke_all_tokens_for_user(self, user_id: str):
         revoked_at = datetime.now(timezone.utc)
-        query = "UPDATE refresh_tokens SET revoked_at = $1 WHERE user_id = $2 AND revoked_at IS NULL"
-        await self.connection.execute(query, revoked_at, user_id)
+        query = "UPDATE refresh_tokens SET revoked_at = :revoked_at WHERE user_id = :user_id AND revoked_at IS NULL"
+        await self.session.execute(text(query), {"revoked_at": revoked_at, "user_id": user_id})
         
         # Option 2: Also bump user token_version (invalidates all Access Tokens too)
         # This requires the user table to have token_version
-        query_user = "UPDATE users_auth_info SET refresh_token_version = refresh_token_version + 1, updated_at = NOW() WHERE id = $1"
-        await self.connection.execute(query_user, user_id)
+        query_user = "UPDATE users_auth_info SET refresh_token_version = refresh_token_version + 1, updated_at = NOW() WHERE id = :user_id"
+        await self.session.execute(text(query_user), {"user_id": user_id})
         logger.warning(f"Revoked all tokens for user {user_id}")
 
     async def get_latest_token_in_family(self, family_id: str) -> Optional[dict]:
         # Get the most recently created token in this family
-        query = "SELECT * FROM refresh_tokens WHERE family_id = $1 ORDER BY created_at DESC LIMIT 1"
-        row = await self.connection.fetchrow(query, family_id)
+        query = "SELECT * FROM refresh_tokens WHERE family_id = :family_id ORDER BY created_at DESC LIMIT 1"
+        result = await self.session.execute(text(query), {"family_id": family_id})
+        row = result.mappings().first()
         if row:
              logger.debug(f"Latest token found for family {family_id}: {row['jti']}")
              return dict(row)

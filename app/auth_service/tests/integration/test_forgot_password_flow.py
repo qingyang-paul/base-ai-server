@@ -7,7 +7,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 @pytest.mark.asyncio
-async def test_forgot_password_flow_integration(client, db_connection, redis_client):
+async def test_forgot_password_flow_integration(client, db_session, redis_client):
     """
     Integration test for Forgot Password Flow.
     """

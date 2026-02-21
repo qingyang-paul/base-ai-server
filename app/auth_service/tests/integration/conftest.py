@@ -45,15 +45,16 @@ os.environ["PG_MAX_POOL_SIZE"] = "10"
 
 import pytest
 import pytest_asyncio
-import asyncpg
 from httpx import AsyncClient, ASGITransport
 from redis.asyncio import Redis
 from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
 
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy import text
+
 from app.main import app
-from app.main import app
-from app.dependencies import get_postgres, get_redis
+from app.dependencies import get_db_session, get_redis
 from unittest.mock import patch, AsyncMock
 
 @pytest_asyncio.fixture(scope="function", autouse=True)
@@ -79,16 +80,12 @@ async def redis_container():
         yield redis
 
 @pytest_asyncio.fixture(scope="function")
-async def db_pool(postgres_container):
-    # Create asyncpg pool
-    dsn = postgres_container.get_connection_url().replace("postgresql+psycopg2://", "postgres://")
-    pool = await asyncpg.create_pool(dsn)
+async def db_engine(postgres_container):
+    dsn = postgres_container.get_connection_url().replace("postgresql+psycopg2://", "postgresql+asyncpg://")
+    engine = create_async_engine(dsn)
     
-    # Initialize DB (Schema)
-    # Since we removed SQLAlchemy, we need to create tables using raw SQL or migration tool.
-    # We need the table `users_auth_info`.
-    async with pool.acquire() as conn:
-        await conn.execute("""
+    async with engine.begin() as conn:
+        await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS users_auth_info (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 email VARCHAR(255) UNIQUE NOT NULL,
@@ -103,7 +100,9 @@ async def db_pool(postgres_container):
                 last_login_at TIMESTAMP WITH TIME ZONE,
                 password_changed_at TIMESTAMP WITH TIME ZONE
             );
-            
+        """))
+        
+        await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS refresh_tokens (
                 jti VARCHAR(255) PRIMARY KEY,
                 user_id UUID NOT NULL,
@@ -117,19 +116,21 @@ async def db_pool(postgres_container):
                 ip_address VARCHAR(255),
                 device_name VARCHAR(255)
             );
-        """)
+        """))
     
-    yield pool
-    await pool.close()
+    yield engine
+    await engine.dispose()
 
 @pytest_asyncio.fixture(scope="function")
-async def db_connection(db_pool):
-    async with db_pool.acquire() as conn:
-        # Start transaction for rollback?
-        tr = conn.transaction()
-        await tr.start()
-        yield conn
-        await tr.rollback()
+async def db_session(db_engine):
+    async_session = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    async with async_session() as session:
+        yield session
+        
+    # Truncate tables after test using a fresh connection
+    async with db_engine.begin() as conn:
+        await conn.execute(text("TRUNCATE TABLE users_auth_info CASCADE;"))
+        await conn.execute(text("TRUNCATE TABLE refresh_tokens CASCADE;"))
 
 @pytest_asyncio.fixture(scope="function")
 async def redis_client(redis_container):
@@ -140,8 +141,11 @@ async def redis_client(redis_container):
 
 
 @pytest_asyncio.fixture(scope="function")
-async def client(db_connection, redis_client):
-    app.dependency_overrides[get_postgres] = lambda: db_connection
+async def client(db_session, redis_client):
+    async def override_get_db_session():
+        yield db_session
+        
+    app.dependency_overrides[get_db_session] = override_get_db_session
     app.dependency_overrides[get_redis] = lambda: redis_client
     
     # Activate lifespan for FastAPILimiter and other startup events

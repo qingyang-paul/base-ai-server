@@ -1,12 +1,14 @@
 import pytest
+import pytest
 import datetime
 import uuid
 from typing import Dict
 from httpx import AsyncClient
 from app.auth_service.core.security import decode_token
+from sqlalchemy import text
 
 @pytest.mark.asyncio
-async def test_refresh_token_flow(client: AsyncClient, db_connection, redis_client):
+async def test_refresh_token_flow(client: AsyncClient, db_session, redis_client):
 
     """
     Integration test for Refresh Token Flow:
@@ -107,13 +109,13 @@ async def test_refresh_token_flow(client: AsyncClient, db_connection, redis_clie
     # Use Python datetime to ensure control
     past_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=45)
     
-    await db_connection.execute(
-        "UPDATE refresh_tokens SET replaced_at = $1 WHERE jti = $2",
-        past_time, jti_1
+    await db_session.execute(
+        text("UPDATE refresh_tokens SET replaced_at = :replaced_at WHERE jti = :jti"),
+        {"replaced_at": past_time, "jti": jti_1}
     )
     
     # Verify the update happened
-    row = await db_connection.fetchrow("SELECT replaced_at FROM refresh_tokens WHERE jti = $1", jti_1)
+    row = (await db_session.execute(text("SELECT replaced_at FROM refresh_tokens WHERE jti = :jti"), {"jti": jti_1})).mappings().first()
     
     # Attempt Reuse of RT_1 -> Should Fail and Revoke All
     reuse_resp_attack = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token_1})
@@ -132,6 +134,6 @@ async def test_refresh_token_flow(client: AsyncClient, db_connection, redis_clie
     
     # Check RT_2 revoked_at
     jti_2 = rt_2_payload["jti"]
-    row_2 = await db_connection.fetchrow("SELECT revoked_at FROM refresh_tokens WHERE jti = $1", jti_2)
+    row_2 = (await db_session.execute(text("SELECT revoked_at FROM refresh_tokens WHERE jti = :jti"), {"jti": jti_2})).mappings().first()
     assert row_2["revoked_at"] is not None
 

@@ -30,7 +30,7 @@ class AuthService:
     async def handle_signup(self, email: str, password: str, nickname: Optional[str] = None):
         logger.info(f"Signup attempt for {email}")
         
-        async with self.repo.connection.transaction():
+        async with self.repo.transaction():
             # 1. Check Rate Limit (Cool down)
             ttl = await self.repo.get_otp_ttl(email, purpose="signup")
             if ttl > 240:
@@ -80,7 +80,7 @@ class AuthService:
     async def handle_verify_email(self, email: str, code: str) -> Dict[str, str]:
         logger.info(f"Verify email attempt for {email}")
         
-        async with self.repo.connection.transaction():
+        async with self.repo.transaction():
             # 1. Verify Code
             saved_code = await self.repo.get_otp(email, purpose="signup")
             if not saved_code or saved_code != code:
@@ -231,7 +231,7 @@ class AuthService:
         }
 
     async def _record_login_activity(self, user, refresh_token_payload, ip_address: str, user_agent: str, curr_time: datetime):
-        async with self.repo.connection.transaction():
+        async with self.repo.transaction():
             # Update Last Login
             updates = UserUpdateSchema(last_login_at=curr_time)
             await self.repo.update_user(user.id, updates)
@@ -270,7 +270,7 @@ class AuthService:
         
         reuse_error = False
         
-        async with self.repo.connection.transaction():
+        async with self.repo.transaction():
             # 2. Check DB Status
             rt_record = await self.repo.get_refresh_token_by_jti(jti)
             if not rt_record:
@@ -480,7 +480,7 @@ class AuthService:
             
         user_id = payload.get("sub")
         
-        async with self.repo.connection.transaction():
+        async with self.repo.transaction():
              user = await self.repo.get_user_by_email(payload.get("email")) # Or by ID if we had get_user_by_id
              # Since we don't have get_user_by_id in repo yet (based on read file), use email from payload if available
              # or trust sub if valid. But we need current version to increment it?
@@ -520,7 +520,7 @@ class AuthService:
     async def handle_change_password(self, user_id: str, old_password: str, new_password: str):
         logger.info(f"Change password attempt for user {user_id}")
         
-        async with self.repo.connection.transaction():
+        async with self.repo.transaction():
             # 1. Get User
             user = await self.repo.get_user_by_id(user_id)
             if not user:

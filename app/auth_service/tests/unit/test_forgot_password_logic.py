@@ -50,11 +50,10 @@ async def test_reset_password_success():
     
     # Mock transaction
     connection_mock = MagicMock()
-    transaction_mock = AsyncMock()
-    transaction_mock.__aenter__.return_value = None
-    transaction_mock.__aexit__.return_value = None
-    connection_mock.transaction.return_value = transaction_mock
-    repo_mock.connection = connection_mock
+    transaction_mock = MagicMock()
+    transaction_mock.__aenter__ = AsyncMock(return_value=None)
+    transaction_mock.__aexit__ = AsyncMock(return_value=None)
+    repo_mock.transaction = MagicMock(return_value=transaction_mock)
 
     # Mock user
     user = MagicMock(spec=UserInternalSchema)

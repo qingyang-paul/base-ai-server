@@ -2,7 +2,6 @@
 
 from collections.abc import AsyncGenerator
 
-import asyncpg
 import redis.asyncio as aioredis
 from fastapi import Request, HTTPException, status
 
@@ -10,13 +9,6 @@ from fastapi import Request, HTTPException, status
 async def get_redis(request: Request) -> aioredis.Redis:
     """获取 Redis 连接池实例。"""
     return request.app.state.redis
-
-
-async def get_postgres(request: Request) -> AsyncGenerator[asyncpg.Connection, None]:
-    """从 Postgres 连接池获取连接，请求结束后自动释放。"""
-    pool: asyncpg.Pool = request.app.state.postgres
-    async with pool.acquire() as connection:
-        yield connection
 
 
 async def get_current_user_id(request: Request) -> str:
@@ -31,26 +23,43 @@ async def get_current_user_id(request: Request) -> str:
     return user_id
 
 from fastapi import Depends
-from asyncpg import Connection
 from redis.asyncio import Redis
 
 from app.auth_service.auth_repo import AuthRepo
 from app.auth_service.auth_service import AuthService
 
+from app.chat_service.chat_service import ChatService
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from app.subscription_service.subscription_repo import SubscriptionRepo
+from app.subscription_service.subscription_service import SubscriptionService
+
+async def get_db_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
+    '''从 SQLAlchemy Engine 获取一个 Session'''
+    engine = request.app.state.db_engine
+    async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with async_session() as session:
+        yield session
+
 async def get_auth_repo(
-    connection: Connection = Depends(get_postgres),
+    session: AsyncSession = Depends(get_db_session),
     redis: Redis = Depends(get_redis)
 ) -> AuthRepo:
-    return AuthRepo(connection, redis)
+    return AuthRepo(session, redis)
 
 async def get_auth_service(
     repo: AuthRepo = Depends(get_auth_repo)
 ) -> AuthService:
     return AuthService(repo)
 
+async def get_subscription_repo(
+    session: AsyncSession = Depends(get_db_session)
+) -> SubscriptionRepo:
+    return SubscriptionRepo(session)
 
-from app.chat_service.chat_service import ChatService
+async def get_subscription_service(
+    repo: SubscriptionRepo = Depends(get_subscription_repo)
+) -> SubscriptionService:
+    return SubscriptionService(repo)
 
 async def get_chat_service() -> ChatService:
     return ChatService()
-

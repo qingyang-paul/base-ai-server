@@ -14,14 +14,11 @@ from app.auth_service.core.schema import UserInternalSchema, UserUpdateSchema
 @pytest.fixture
 def mock_repo():
     repo = AsyncMock()
-    
-    # Mock Connection & Transaction
     connection_mock = MagicMock()
-    transaction_mock = AsyncMock()
+    transaction_mock = MagicMock()
     transaction_mock.__aenter__ = AsyncMock(return_value=None)
     transaction_mock.__aexit__ = AsyncMock(return_value=None)
-    connection_mock.transaction.return_value = transaction_mock
-    repo.connection = connection_mock
+    repo.transaction = MagicMock(return_value=transaction_mock)
     
     return repo
 

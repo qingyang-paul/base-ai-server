@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy import text
 import logging
 from unittest.mock import patch, AsyncMock
 
@@ -7,7 +8,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 @pytest.mark.asyncio
-async def test_signup_flow_integration(client, db_connection, redis_client):
+async def test_signup_flow_integration(client, db_session, redis_client):
     """
     Integration test for Signup Flow using global mock for email task.
     """
@@ -29,7 +30,7 @@ async def test_signup_flow_integration(client, db_connection, redis_client):
     assert response.json()["msg"] == "success"
     
     # Verify DB
-    row = await db_connection.fetchrow("SELECT * FROM users_auth_info WHERE email = $1", email)
+    row = (await db_session.execute(text("SELECT * FROM users_auth_info WHERE email = :email"), {"email": email})).mappings().first()
     assert row is not None
     logger.info(f"User found in DB: {dict(row)}")
     assert row["email"] == email

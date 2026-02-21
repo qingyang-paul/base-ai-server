@@ -16,12 +16,11 @@ async def test_handle_signup_new_user():
     connection_mock.fetchrow = AsyncMock()
     connection_mock.execute = AsyncMock()
     # transaction is sync, returns async context manager
-    transaction_mock = AsyncMock()
-    transaction_mock.__aenter__.return_value = None
-    transaction_mock.__aexit__.return_value = None
-    connection_mock.transaction.return_value = transaction_mock
+    transaction_mock = MagicMock()
+    transaction_mock.__aenter__ = AsyncMock(return_value=None)
+    transaction_mock.__aexit__ = AsyncMock(return_value=None)
+    repo_mock.transaction = MagicMock(return_value=transaction_mock)
     
-    repo_mock.connection = connection_mock
     
     with patch("app.auth_service.auth_service.send_email_task") as task_mock:
         task_mock.kiq = AsyncMock()
@@ -37,7 +36,7 @@ async def test_handle_signup_new_user():
         args, kwargs = task_mock.kiq.call_args
         assert args[0] == "test@example.com"
         # Verify transaction was entered
-        connection_mock.transaction.assert_called_once()
+        repo_mock.transaction.assert_called_once()
         transaction_mock.__aenter__.assert_called_once()
 
 @pytest.mark.asyncio
@@ -49,9 +48,8 @@ async def test_handle_signup_rate_limit():
     # Actually exception happens before transaction in this logic
     # But good practice to mock
     connection_mock = MagicMock()
-    transaction_mock = AsyncMock()
-    connection_mock.transaction.return_value = transaction_mock
-    repo_mock.connection = connection_mock
+    transaction_mock = MagicMock()
+    repo_mock.transaction = MagicMock(return_value=transaction_mock)
     
     service = AuthService(repo_mock)
     
@@ -65,11 +63,10 @@ async def test_verify_email_success():
     
     # Configure connection mock
     connection_mock = MagicMock()
-    transaction_mock = AsyncMock()
-    transaction_mock.__aenter__.return_value = None
-    transaction_mock.__aexit__.return_value = None
-    connection_mock.transaction.return_value = transaction_mock
-    repo_mock.connection = connection_mock
+    transaction_mock = MagicMock()
+    transaction_mock.__aenter__ = AsyncMock(return_value=None)
+    transaction_mock.__aexit__ = AsyncMock(return_value=None)
+    repo_mock.transaction = MagicMock(return_value=transaction_mock)
 
     user = MagicMock(spec=UserInternalSchema)
     user.id = "uuid"
@@ -101,9 +98,8 @@ async def test_verify_email_invalid_code():
     repo_mock.get_otp.return_value = "654321" # Different code
     
     connection_mock = MagicMock()
-    transaction_mock = AsyncMock()
-    connection_mock.transaction.return_value = transaction_mock
-    repo_mock.connection = connection_mock
+    transaction_mock = MagicMock()
+    repo_mock.transaction = MagicMock(return_value=transaction_mock)
     
     service = AuthService(repo_mock)
     

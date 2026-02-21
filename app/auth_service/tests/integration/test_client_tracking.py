@@ -1,10 +1,11 @@
 import pytest
+from sqlalchemy import text
 import uuid
 from httpx import AsyncClient
 from app.auth_service.core.security import decode_token
 
 @pytest.mark.asyncio
-async def test_client_tracking_persistence(client: AsyncClient, db_connection, redis_client):
+async def test_client_tracking_persistence(client: AsyncClient, db_session, redis_client):
     """
     Verify IP and Device Name persistence in Login and Refresh flows.
     """
@@ -50,7 +51,7 @@ async def test_client_tracking_persistence(client: AsyncClient, db_connection, r
     payload = decode_token(refresh_token)
     jti = payload["jti"]
     
-    row = await db_connection.fetchrow("SELECT ip_address, device_name FROM refresh_tokens WHERE jti = $1", jti)
+    row = (await db_session.execute(text("SELECT ip_address, device_name FROM refresh_tokens WHERE jti = :jti"), {"jti": jti})).mappings().first()
     assert row["ip_address"] == test_ip
     assert row["device_name"] == test_ua
     
@@ -75,6 +76,6 @@ async def test_client_tracking_persistence(client: AsyncClient, db_connection, r
     new_payload = decode_token(new_refresh_token)
     new_jti = new_payload["jti"]
     
-    new_row = await db_connection.fetchrow("SELECT ip_address, device_name FROM refresh_tokens WHERE jti = $1", new_jti)
+    new_row = (await db_session.execute(text("SELECT ip_address, device_name FROM refresh_tokens WHERE jti = :jti"), {"jti": new_jti})).mappings().first()
     assert new_row["ip_address"] == new_ip
     assert new_row["device_name"] == new_ua
