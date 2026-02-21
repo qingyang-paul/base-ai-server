@@ -188,6 +188,9 @@ class ChatService:
         loop_count = 0
         global_seq_id = int(time.time() * 1000)
         
+        # 用于记录本次用户query下，涉及的所有LLM生成的信息（工具调用，最终回复）及工具调用结果
+        generated_messages: List[LLMMessage] = []
+        
         logger.info(f"Starting agent loop for model: {runtime_config.model}")
         
         # Get provider instance
@@ -197,92 +200,105 @@ class ChatService:
         except ValueError:
             raise ProviderNotFoundError(f"Provider '{provider_name}' not found. Available: {list(llm_manager.providers.keys())}")
 
+        try:
+            while loop_count < max_loops:
+                loop_count += 1
+                tool_calls_acc = {}
 
-        while loop_count < max_loops:
-            loop_count += 1
-            tool_calls_acc = {}
+                if loop_count > 1:
+                    global_seq_id += 1
+                    yield StatusEvent(seq_id=global_seq_id, message="正在思考总结...", status="running")
 
-            if loop_count > 1:
-                global_seq_id += 1
-                yield StatusEvent(seq_id=global_seq_id, message="正在思考总结...", status="running")
+                assistant_content = ""
+                # Receive standard event stream from provider
+                async for event in provider.stream_reply(runtime_config, current_payload):
+                    global_seq_id += 1
+                    # Override seq_id to ensure global ordering
+                    event.seq_id = global_seq_id
+                    yield event
 
-            assistant_content = ""
-            # Receive standard event stream from provider
-            async for event in provider.stream_reply(runtime_config, current_payload):
-                global_seq_id += 1
-                # Override seq_id to ensure global ordering
-                event.seq_id = global_seq_id
-                yield event
+                    if isinstance(event, MessageChunkEvent):
+                        if event.content:
+                            assistant_content += event.content
 
-                if isinstance(event, MessageChunkEvent):
-                    if event.content:
-                        assistant_content += event.content
+                    if isinstance(event, ToolCallChunkEvent):
+                        idx = event.index
+                        if idx not in tool_calls_acc:
+                            tool_calls_acc[idx] = {
+                                "id": f"call_{idx}_{global_seq_id}", 
+                                "name": event.tool_name or "", 
+                                "arguments": event.args_chunk or "",
+                                "vendor_extra": event.vendor_extra_chunk or {}
+                            }
+                        else:
+                            if event.tool_name: tool_calls_acc[idx]["name"] += event.tool_name
+                            if event.args_chunk: tool_calls_acc[idx]["arguments"] += event.args_chunk
+                            if event.vendor_extra_chunk:
+                                if "vendor_extra" not in tool_calls_acc[idx]:
+                                    tool_calls_acc[idx]["vendor_extra"] = {}
+                                tool_calls_acc[idx]["vendor_extra"].update(event.vendor_extra_chunk)
 
-                if isinstance(event, ToolCallChunkEvent):
-                    idx = event.index
-                    if idx not in tool_calls_acc:
-                        tool_calls_acc[idx] = {
-                            "id": f"call_{idx}_{global_seq_id}", 
-                            "name": event.tool_name or "", 
-                            "arguments": event.args_chunk or "",
-                            "vendor_extra": event.vendor_extra_chunk or {}
-                        }
-                    else:
-                        if event.tool_name: tool_calls_acc[idx]["name"] += event.tool_name
-                        if event.args_chunk: tool_calls_acc[idx]["arguments"] += event.args_chunk
-                        if event.vendor_extra_chunk:
-                            if "vendor_extra" not in tool_calls_acc[idx]:
-                                tool_calls_acc[idx]["vendor_extra"] = {}
-                            tool_calls_acc[idx]["vendor_extra"].update(event.vendor_extra_chunk)
+                if not tool_calls_acc:
+                     # If we have content but no tools, we should also update history?
+                     # Actually, usually if no tools, we break and the loop ends,
+                     # 但是需要把最终返回的文字内容也加到记录里面
+                     if assistant_content:
+                         generated_messages.append(LLMMessage(
+                             role=RoleType.ASSISTANT,
+                             content=assistant_content
+                         ))
+                     # The caller (client) has received the stream.
+                     # The 'payload' is local to this request.
+                     break
 
-            if not tool_calls_acc:
-                 # If we have content but no tools, we should also update history?
-                 # Actually, usually if no tools, we break and the loop ends,
-                 # but for multi-turn chat without tools, we might want to preserve history if we were to continue.
-                 # But here, if no tools, we just break.
-                 # The caller (client) has received the stream.
-                 # The 'payload' is local to this request.
-                 break
+                # Execute tools
+                assistant_tool_msg = LLMMessage(role=RoleType.ASSISTANT, content=assistant_content, tool_calls=[])
+                tool_results_msgs = []
 
-            # Execute tools
-            assistant_tool_msg = LLMMessage(role=RoleType.ASSISTANT, content=assistant_content, tool_calls=[])
-            tool_results_msgs = []
+                for idx, data in tool_calls_acc.items():
+                    t_name = data["name"]
+                    t_args = data["arguments"]
+                    t_vendor_extra = data.get("vendor_extra")
+                    
+                    # Create ToolCall object for history
+                    # We need a unique ID for the tool call
+                    tool_call_id = data["id"]
+                    assistant_tool_msg.tool_calls.append(ToolCall(
+                        id=tool_call_id, 
+                        function=ToolCallFunction(name=t_name, arguments=t_args, vendor_extra=t_vendor_extra)
+                    ))
+                    
+                    # Get description for display
+                    desc = t_name # Default to name
+                    tool_def = self.tools.get(t_name)
+                    if tool_def:
+                        desc = tool_def.description
 
-            for idx, data in tool_calls_acc.items():
-                t_name = data["name"]
-                t_args = data["arguments"]
-                t_vendor_extra = data.get("vendor_extra")
+                    global_seq_id += 1
+                    yield StatusEvent(seq_id=global_seq_id, message=f"正在 {desc}...", tool_name=t_name, status="running")
+                    
+                    # Execute the tool
+                    res_str = await self.run_tool(t_name, t_args, context_kwargs)
+                    
+                    global_seq_id += 1
+                    yield StatusEvent(seq_id=global_seq_id, message=f"已完成 {desc}", tool_name=t_name, status="success")
+                    
+                    tool_results_msgs.append(LLMMessage(role=RoleType.TOOL, tool_call_id=tool_call_id, name=t_name, content=res_str))
+
+                # 更新记录：单次大模型返回的消息（包括中间步骤的回答和tool_calls）和各工具的结果 
+                generated_messages.append(assistant_tool_msg)
+                generated_messages.extend(tool_results_msgs)
+
+                # Update payload with assistant's tool calls and tool results
+                current_payload.messages.append(assistant_tool_msg)
+                current_payload.messages.extend(tool_results_msgs)
                 
-                # Create ToolCall object for history
-                # We need a unique ID for the tool call
-                tool_call_id = data["id"]
-                assistant_tool_msg.tool_calls.append(ToolCall(
-                    id=tool_call_id, 
-                    function=ToolCallFunction(name=t_name, arguments=t_args, vendor_extra=t_vendor_extra)
-                ))
-                
-                # Get description for display
-                desc = t_name # Default to name
-                tool_def = self.tools.get(t_name)
-                if tool_def:
-                    desc = tool_def.description
+            else:
+                # Loop finished without breaking (max loops reached)
+                 yield MessageChunkEvent(seq_id=99999, content="\n\n[系统] 操作超限，已强制停止。")
 
-                global_seq_id += 1
-                yield StatusEvent(seq_id=global_seq_id, message=f"正在 {desc}...", tool_name=t_name, status="running")
-                
-                # Execute the tool
-                res_str = await self.run_tool(t_name, t_args, context_kwargs)
-                
-                global_seq_id += 1
-                yield StatusEvent(seq_id=global_seq_id, message=f"已完成 {desc}", tool_name=t_name, status="success")
-                
-                tool_results_msgs.append(LLMMessage(role=RoleType.TOOL, tool_call_id=tool_call_id, name=t_name, content=res_str))
-
-            # Update payload with assistant's tool calls and tool results
-            current_payload.messages.append(assistant_tool_msg)
-            current_payload.messages.extend(tool_results_msgs)
-            
-        else:
-            # Loop finished without breaking (max loops reached)
-             yield MessageChunkEvent(seq_id=99999, content="\n\n[系统] 操作超限，已强制停止。")
+        finally:
+            # 在返回或出现异常时，保留 generated_messages 列表
+            # TODO: 后续在这里获取该 List 或者通过外层回调接收以进行持久化
+            pass
 
