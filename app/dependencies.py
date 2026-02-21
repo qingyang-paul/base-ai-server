@@ -48,3 +48,9 @@ async def get_auth_service(
 ) -> AuthService:
     return AuthService(repo)
 
+
+from app.chat_service.chat_service import ChatService
+
+async def get_chat_service() -> ChatService:
+    return ChatService()
+
