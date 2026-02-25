@@ -116,14 +116,16 @@ async def test_agent_loop_max_loops(chat_service):
     
     mock_provider.stream_reply = mock_stream_reply
     
-    with patch("app.chat_service.chat_service.llm_manager") as mock_manager:
+    with patch("app.chat_service.chat_service.llm_manager") as mock_manager, \
+         patch("app.chat_service.chat_service.settings") as mock_settings:
         mock_manager.get_provider.return_value = mock_provider
+        mock_settings.agent_max_loops = 2
         
         payload = LLMPayload(messages=[LLMMessage(role=RoleType.USER, content="Run forever")])
         config = MockRuntimeConfig(provider="mock_provider")
         
         events = []
-        async for event in chat_service.chat_stream_with_tools(config, payload, max_loops=2):
+        async for event in chat_service.chat_stream_with_tools(config, payload):
             events.append(event)
             
         # Should end with forced stop message

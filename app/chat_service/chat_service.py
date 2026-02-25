@@ -7,6 +7,7 @@ from app.chat_service.core.schema import (
     LLMTool, RoleType, LLMMessage, ChatHistory, LLMPayload, UserQuery, SessionContext, SOPPreference,
     GenerationConfig, StreamReply, StatusEvent, StreamEventType, ToolCallChunkEvent, MessageChunkEvent, ToolCall, ToolCallFunction, StatisticEvent, RunFinishEvent
 )
+from app.chat_service.core.config import settings
 from app.chat_service.core.llm_client_manager import llm_manager
 
 from app.chat_service.core.exceptions import ProviderNotFoundError
@@ -180,10 +181,11 @@ class ChatService:
             return f"Error executing tool '{tool_name}': {str(e)}"
 
     async def chat_stream_with_tools(
-        self, runtime_config: GenerationConfig, payload: LLMPayload, context_kwargs: dict = None, max_loops: int = 5
+        self, runtime_config: GenerationConfig, payload: LLMPayload, context_kwargs: dict = None
     ) -> AsyncGenerator[StreamReply, None]:
         """Level 5: Agentic Loop (Core State Machine)"""
         if context_kwargs is None: context_kwargs = {}
+        max_loops = settings.agent_max_loops
         current_payload = payload
         loop_count = 0
         global_seq_id = int(time.time() * 1000)
