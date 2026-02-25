@@ -55,6 +55,7 @@ class GeminiProvider(BaseLLMProvider):
         
         start_time = time.time()
         seq_id = 0
+        input_tokens = 0
         output_tokens = 0
         
         # 1. === 协议转换 ===
@@ -82,6 +83,11 @@ class GeminiProvider(BaseLLMProvider):
             async for chunk in response_stream:
                 # New SDK chunk structure
                 # chunk.candidates[0].content.parts[...]
+                if getattr(chunk, 'usage_metadata', None):
+                    if getattr(chunk.usage_metadata, 'prompt_token_count', None):
+                        input_tokens = chunk.usage_metadata.prompt_token_count
+                    if getattr(chunk.usage_metadata, 'candidates_token_count', None):
+                        output_tokens = chunk.usage_metadata.candidates_token_count
                 
                 if not chunk.candidates:
                      continue
@@ -90,7 +96,6 @@ class GeminiProvider(BaseLLMProvider):
                     # A. 处理普通文本
                     if part.text:
                         seq_id += 1
-                        output_tokens += 1
                         yield MessageChunkEvent(seq_id=seq_id, content=part.text)
                     
                     # B. 处理工具调用
@@ -124,7 +129,7 @@ class GeminiProvider(BaseLLMProvider):
             # 6. === 结束统计 ===
             yield StatisticEvent(
                 seq_id=seq_id + 1,
-                input_tokens=0, 
+                input_tokens=input_tokens, 
                 output_tokens=output_tokens,
                 response_duration=time.time() - start_time
             )

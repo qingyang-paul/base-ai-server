@@ -62,6 +62,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         
         start_time = time.time()
         seq_id = 0
+        input_tokens = 0
         output_tokens = 0
         
         # 1. 确保 config 类型正确
@@ -70,12 +71,14 @@ class OpenAICompatibleProvider(BaseLLMProvider):
              raise ModelConfigError(f"Invalid config type: {type(config)}. Expected OpenAIRuntimeConfig or QwenRuntimeConfig.")
 
         # 2. 组装请求参数
-        messages_dicts = [m.model_dump(exclude_none=True) for m in payload.messages]
+        allowed_keys = {"role", "content", "name", "tool_calls", "tool_call_id"}
+        messages_dicts = [m.model_dump(exclude_none=True, include=allowed_keys) for m in payload.messages]
         
         kwargs = {
             "model": config.model,
             "messages": messages_dicts,
             "stream": True,
+            "stream_options": {"include_usage": True},
             "temperature": config.temperature,
             "max_tokens": config.max_tokens,
             "frequency_penalty": config.frequency_penalty
@@ -98,12 +101,19 @@ class OpenAICompatibleProvider(BaseLLMProvider):
 
         # 4. 翻译网络流 
         async for chunk in stream:
+            # Check for usage metadata (typically in the last chunk when stream_options={"include_usage": True} is passed)
+            if getattr(chunk, 'usage', None):
+                input_tokens = chunk.usage.prompt_tokens
+                output_tokens = chunk.usage.completion_tokens
+            
+            if not chunk.choices:
+                continue
+                
             delta = chunk.choices[0].delta
             
             # 普通文本
             if delta.content:
                 seq_id += 1
-                output_tokens += 1 # 粗略估算
                 yield MessageChunkEvent(seq_id=seq_id, content=delta.content)
             
             # 工具调用碎片
@@ -122,7 +132,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         duration = time.time() - start_time
         yield StatisticEvent(
             seq_id=seq_id + 1,
-            input_tokens=0, # 需要 tiktoken 计算或 stream_options
+            input_tokens=input_tokens,
             output_tokens=output_tokens,
             response_duration=duration
         )

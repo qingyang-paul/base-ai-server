@@ -5,7 +5,7 @@ from loguru import logger
 from app.chat_service.core.llm_tools import registry, FuncName
 from app.chat_service.core.schema import (
     LLMTool, RoleType, LLMMessage, ChatHistory, LLMPayload, UserQuery, SessionContext, SOPPreference,
-    GenerationConfig, StreamReply, StatusEvent, StreamEventType, ToolCallChunkEvent, MessageChunkEvent, ToolCall, ToolCallFunction
+    GenerationConfig, StreamReply, StatusEvent, StreamEventType, ToolCallChunkEvent, MessageChunkEvent, ToolCall, ToolCallFunction, StatisticEvent
 )
 from app.chat_service.core.llm_client_manager import llm_manager
 
@@ -204,6 +204,8 @@ class ChatService:
             while loop_count < max_loops:
                 loop_count += 1
                 tool_calls_acc = {}
+                input_tokens_this_round = 0
+                output_tokens_this_round = 0
 
                 if loop_count > 1:
                     global_seq_id += 1
@@ -220,6 +222,10 @@ class ChatService:
                     if isinstance(event, MessageChunkEvent):
                         if event.content:
                             assistant_content += event.content
+
+                    if isinstance(event, StatisticEvent):
+                        input_tokens_this_round += event.input_tokens
+                        output_tokens_this_round += event.output_tokens
 
                     if isinstance(event, ToolCallChunkEvent):
                         idx = event.index
@@ -238,6 +244,9 @@ class ChatService:
                                     tool_calls_acc[idx]["vendor_extra"] = {}
                                 tool_calls_acc[idx]["vendor_extra"].update(event.vendor_extra_chunk)
 
+                if current_payload.messages:
+                    current_payload.messages[-1].tokens = input_tokens_this_round
+
                 if not tool_calls_acc:
                      # If we have content but no tools, we should also update history?
                      # Actually, usually if no tools, we break and the loop ends,
@@ -245,14 +254,20 @@ class ChatService:
                      if assistant_content:
                          generated_messages.append(LLMMessage(
                              role=RoleType.ASSISTANT,
-                             content=assistant_content
+                             content=assistant_content,
+                             tokens=output_tokens_this_round
                          ))
                      # The caller (client) has received the stream.
                      # The 'payload' is local to this request.
                      break
 
-                # Execute tools
-                assistant_tool_msg = LLMMessage(role=RoleType.ASSISTANT, content=assistant_content, tool_calls=[])
+                 # Execute tools
+                assistant_tool_msg = LLMMessage(
+                    role=RoleType.ASSISTANT, 
+                    content=assistant_content, 
+                    tool_calls=[],
+                    tokens=output_tokens_this_round
+                )
                 tool_results_msgs = []
 
                 for idx, data in tool_calls_acc.items():

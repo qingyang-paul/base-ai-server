@@ -91,5 +91,5 @@ async def test_gemini_provider_startup():
     
     with patch("app.chat_service.core.llm_providers.gemini_provider.genai") as mock_genai:
         await provider.startup()
-        mock_genai.configure.assert_called_with(api_key="test-key")
+        mock_genai.Client.assert_called_with(api_key="test-key")
         assert provider.get_sdk() == mock_genai

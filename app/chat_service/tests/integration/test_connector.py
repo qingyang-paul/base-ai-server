@@ -1,4 +1,5 @@
 import asyncio
+import pytest
 import os
 import sys
 from dotenv import load_dotenv
@@ -19,6 +20,7 @@ from app.chat_service.core.schema import (
     StreamEventType, MessageChunkEvent, ToolCallChunkEvent, RoleType
 )
 
+@pytest.mark.asyncio
 async def test_providers():
     print("🚀 Starting Integration Test for Chat Service Providers")
     

@@ -39,6 +39,10 @@ class LLMMessage(BaseModel):
     # When role="tool", we must provide tool_call_id and name
     tool_call_id: Optional[str] = None
     name: Optional[str] = None # Tool name
+    
+    # Metadata
+    model: Optional[str] = None
+    tokens: Optional[int] = None
 
 class ChatHistory(BaseModel):
     messages: List[LLMMessage]

@@ -1,4 +1,5 @@
 import asyncio
+import pytest
 import os
 import sys
 import json
@@ -33,6 +34,7 @@ tool_name = "calculate_sum"
 def calculate_sum(a: int, b: int) -> int:
     return a + b
 
+@pytest.mark.asyncio
 async def test_tool_use():
     print("🚀 Starting Tool Use Integration Test via ChatService Logic")
     
