@@ -5,7 +5,7 @@ from loguru import logger
 from app.chat_service.core.llm_tools import registry, FuncName
 from app.chat_service.core.schema import (
     LLMTool, RoleType, LLMMessage, ChatHistory, LLMPayload, UserQuery, SessionContext, SOPPreference,
-    GenerationConfig, StreamReply, StatusEvent, StreamEventType, ToolCallChunkEvent, MessageChunkEvent, ToolCall, ToolCallFunction, StatisticEvent
+    GenerationConfig, StreamReply, StatusEvent, StreamEventType, ToolCallChunkEvent, MessageChunkEvent, ToolCall, ToolCallFunction, StatisticEvent, RunFinishEvent
 )
 from app.chat_service.core.llm_client_manager import llm_manager
 
@@ -313,7 +313,9 @@ class ChatService:
                  yield MessageChunkEvent(seq_id=99999, content="\n\n[系统] 操作超限，已强制停止。")
 
         finally:
-            # 在返回或出现异常时，保留 generated_messages 列表
-            # TODO: 后续在这里获取该 List 或者通过外层回调接收以进行持久化
-            pass
+            # 在返回或出现异常时，把记录的 generated_messages 列表发送出去
+            yield RunFinishEvent(
+                seq_id=global_seq_id + 1, 
+                generated_messages=generated_messages
+            )
 

@@ -65,7 +65,7 @@ async def test_providers():
         print(f"Calling Qwen with model: {config.model}")
         try:
             async for event in service.stream_reply(config, payload):
-                if event.event_type == StreamEventType.MESSAGE_CHUNK:
+                if event.event_type == StreamEventType.TEXT_CHUNK:
                     print(event.content, end="", flush=True)
                 elif event.event_type == StreamEventType.ERROR:
                     print(f"\nError: {event.content}")
@@ -98,7 +98,7 @@ async def test_providers():
         print(f"Calling Gemini with model: {config.model}")
         try:
             async for event in service.stream_reply(config, payload):
-                if event.event_type == StreamEventType.MESSAGE_CHUNK:
+                if event.event_type == StreamEventType.TEXT_CHUNK:
                     print(event.content, end="", flush=True)
                 elif event.event_type == StreamEventType.ERROR:
                     print(f"\nError: {event.content}")

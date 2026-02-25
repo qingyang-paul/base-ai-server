@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from app.chat_service.chat_service import ChatService
 from app.chat_service.core.schema import (
     GenerationConfig, LLMPayload, StreamEventType, MessageChunkEvent, 
-    ToolCallChunkEvent, StatusEvent, RoleType, LLMMessage, ToolCall, ToolCallFunction
+    ToolCallChunkEvent, StatusEvent, RoleType, LLMMessage, ToolCall, ToolCallFunction, RunFinishEvent
 )
 from app.chat_service.core.llm_tools import registry
 from pydantic import BaseModel
@@ -50,9 +50,10 @@ async def test_agent_loop_no_tools(chat_service):
         async for event in chat_service.chat_stream_with_tools(config, payload):
             events.append(event)
             
-        assert len(events) == 2
+        assert len(events) == 3
         assert events[0].content == "Hello"
         assert events[1].content == " World"
+        assert isinstance(events[-1], RunFinishEvent)
 
 @pytest.mark.asyncio
 async def test_agent_loop_single_tool_call(chat_service):
@@ -126,5 +127,7 @@ async def test_agent_loop_max_loops(chat_service):
             events.append(event)
             
         # Should end with forced stop message
-        assert isinstance(events[-1], MessageChunkEvent)
-        assert "操作超限" in events[-1].content
+        # Should end with forced stop message and then RunFinishEvent
+        assert isinstance(events[-2], MessageChunkEvent)
+        assert "操作超限" in events[-2].content
+        assert isinstance(events[-1], RunFinishEvent)

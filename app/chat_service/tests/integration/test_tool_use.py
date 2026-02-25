@@ -81,11 +81,11 @@ async def test_tool_use():
         
         try:
             async for event in service.stream_reply(config, payload):
-                if event.event_type == StreamEventType.TOOL_CALL_CHUNK:
+                if event.event_type == StreamEventType.TOOL_CALL:
                     print(f"🛠️ Tool Call Chunk: {event.args_chunk}", end=" | ", flush=True)
                     full_tool_args += event.args_chunk
                     tool_call_found = True
-                elif event.event_type == StreamEventType.MESSAGE_CHUNK:
+                elif event.event_type == StreamEventType.TEXT_CHUNK:
                     print(event.content, end="", flush=True)
             
             print("\n")
@@ -118,12 +118,12 @@ async def test_tool_use():
         
         try:
             async for event in service.stream_reply(config, payload):
-                if event.event_type == StreamEventType.TOOL_CALL_CHUNK:
+                if event.event_type == StreamEventType.TOOL_CALL:
                     # Gemini might return full JSON in one chunk or streaming
                     print(f"🛠️ Tool Call Chunk: {event.args_chunk}", end=" | ", flush=True)
                     full_tool_args += event.args_chunk
                     tool_call_found = True
-                elif event.event_type == StreamEventType.MESSAGE_CHUNK:
+                elif event.event_type == StreamEventType.TEXT_CHUNK:
                     print(event.content, end="", flush=True)
             
             print("\n")

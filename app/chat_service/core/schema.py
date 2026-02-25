@@ -81,22 +81,23 @@ class SessionContext(BaseModel):
 # ==========================================
 
 class StreamEventType(str, Enum):
-    MESSAGE_CHUNK = "message_chunk"
-    TOOL_CALL_CHUNK = "tool_call_chunk"
+    TEXT_CHUNK = "text_chunk"
+    TOOL_CALL = "tool_call"
     STATS = "statistic"
     ERROR = "error"
     STATUS = "status"
+    RUN_FINISH = "run_finish"
 
 class BaseStreamReply(BaseModel):
     event_type: StreamEventType
     seq_id: int = Field(..., description="Sequence ID for ordering")
 
 class MessageChunkEvent(BaseStreamReply):
-    event_type: Literal[StreamEventType.MESSAGE_CHUNK] = StreamEventType.MESSAGE_CHUNK
+    event_type: Literal[StreamEventType.TEXT_CHUNK] = StreamEventType.TEXT_CHUNK
     content: str
 
 class ToolCallChunkEvent(BaseStreamReply):
-    event_type: Literal[StreamEventType.TOOL_CALL_CHUNK] = StreamEventType.TOOL_CALL_CHUNK
+    event_type: Literal[StreamEventType.TOOL_CALL] = StreamEventType.TOOL_CALL
     tool_name: Optional[str] = None
     args_chunk: str
     index: int = 0
@@ -114,11 +115,16 @@ class StatusEvent(BaseStreamReply):
     tool_name: Optional[str] = None
     status: Literal["running", "success", "failed"] = "running"
 
+class RunFinishEvent(BaseStreamReply):
+    event_type: Literal[StreamEventType.RUN_FINISH] = StreamEventType.RUN_FINISH
+    generated_messages: List[LLMMessage]
+
 StreamReply = Union[
     MessageChunkEvent, 
     ToolCallChunkEvent, 
     StatisticEvent, 
-    StatusEvent
+    StatusEvent,
+    RunFinishEvent
 ]
 
 class OpenAIRuntimeConfig(BaseModel):

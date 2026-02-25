@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     openai: LLMClientConfig
     gemini: LLMClientConfig
     qwen: LLMClientConfig
+    agent_max_loops: int = Field(default=5, description="Maximum iterations for agent loop")
 
     model_config = SettingsConfigDict(env_nested_delimiter='__', env_file='.env', extra='ignore')
 

@@ -88,9 +88,9 @@ async def test_agent_loop_qwen(setup_real_env):
         async for event in chat_service.chat_stream_with_tools(runtime_config, payload):
             events.append(event)
             line = f"[{event.event_type}] Seq={event.seq_id} "
-            if event.event_type == StreamEventType.MESSAGE_CHUNK:
+            if event.event_type == StreamEventType.TEXT_CHUNK:
                 line += f"Content={repr(event.content)}"
-            elif event.event_type == StreamEventType.TOOL_CALL_CHUNK:
+            elif event.event_type == StreamEventType.TOOL_CALL:
                 line += f"Tool={event.tool_name} Args={event.args_chunk}"
             elif event.event_type == StreamEventType.STATUS:
                 line += f"Status={event.status} Msg={event.message}"
@@ -118,7 +118,7 @@ async def test_agent_loop_qwen(setup_real_env):
          pytest.skip("No events received (likely API error or timeout)")
 
     # Check for Tool usage
-    has_tool_call = any(e.event_type == StreamEventType.TOOL_CALL_CHUNK for e in events)
+    has_tool_call = any(e.event_type == StreamEventType.TOOL_CALL for e in events)
     if not has_tool_call:
         print("WARNING: No tool call detected. Model might have answered directly.")
     
@@ -128,7 +128,7 @@ async def test_agent_loop_qwen(setup_real_env):
         assert has_status, "Expected status events if tool was called"
     
     # Check final answer
-    full_content = "".join([e.content for e in events if e.event_type == StreamEventType.MESSAGE_CHUNK])
+    full_content = "".join([e.content for e in events if e.event_type == StreamEventType.TEXT_CHUNK])
     answer = "80235" # 12345 + 67890
     
     if answer not in full_content:
