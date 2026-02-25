@@ -16,9 +16,10 @@ from app.chat_service.core.llm_providers.openai_provider import OpenAICompatible
 from app.chat_service.core.llm_providers.gemini_provider import GeminiProvider
 from app.chat_service.chat_service import ChatService
 from app.chat_service.core.schema import (
-    LLMPayload, UserQuery, ChatHistory, GeminiRuntimeConfig, OpenAIRuntimeConfig, QwenRuntimeConfig,
+    LLMPayload, UserQuery, ChatHistory,
     StreamEventType, MessageChunkEvent, ToolCallChunkEvent, RoleType
 )
+from app.subscription_service.core.config import GlobalLLMConfig
 
 @pytest.mark.asyncio
 async def test_providers():
@@ -57,12 +58,14 @@ async def test_providers():
         # For Qwen, we now use QwenRuntimeConfig
         qwen_model = settings.qwen.model if hasattr(settings, 'qwen') and settings.qwen.model else "qwen-max"
         
-        config = QwenRuntimeConfig(
+        config = GlobalLLMConfig(
             provider="qwen", 
-            model=qwen_model
+            model_id=qwen_model,
+            base_prompt_ratio=0.01,
+            base_completion_ratio=0.01
         )
         
-        print(f"Calling Qwen with model: {config.model}")
+        print(f"Calling Qwen with model: {config.model_id}")
         try:
             async for event in service.stream_reply(config, payload):
                 if event.event_type == StreamEventType.TEXT_CHUNK:
@@ -90,12 +93,14 @@ async def test_providers():
         # We need to construct the runtime config carefully
         gemini_model = "gemini-2.0-flash" # Force use a known working model for testing
         
-        config = GeminiRuntimeConfig(
+        config = GlobalLLMConfig(
             provider="gemini",
-            model=gemini_model
+            model_id=gemini_model,
+            base_prompt_ratio=0.01,
+            base_completion_ratio=0.01
         )
         
-        print(f"Calling Gemini with model: {config.model}")
+        print(f"Calling Gemini with model: {config.model_id}")
         try:
             async for event in service.stream_reply(config, payload):
                 if event.event_type == StreamEventType.TEXT_CHUNK:

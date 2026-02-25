@@ -4,18 +4,16 @@ import httpx
 from loguru import logger
 from openai import AsyncOpenAI
 from app.chat_service.core.llm_providers.base import BaseLLMProvider
-from app.chat_service.core.config import LLMClientConfig
+from app.chat_service.core.config import LLMClientConfig, settings
 from app.chat_service.core.schema import (
-    GenerationConfig, 
     LLMPayload, 
     StreamReply, 
     MessageChunkEvent, 
     ToolCallChunkEvent,
     StatisticEvent,
-    StreamEventType,
-    OpenAIRuntimeConfig,
-    QwenRuntimeConfig
+    StreamEventType
 )
+from app.subscription_service.core.config import GlobalLLMConfig
 from app.chat_service.core.exceptions import ModelConfigError
 
 class OpenAICompatibleProvider(BaseLLMProvider):
@@ -56,7 +54,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
 
     async def stream_reply(
         self, 
-        config: GenerationConfig, 
+        config: GlobalLLMConfig, 
         payload: LLMPayload
     ) -> AsyncGenerator[StreamReply, None]:
         
@@ -66,22 +64,30 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         output_tokens = 0
         
         # 1. 确保 config 类型正确
-        if not isinstance(config, (OpenAIRuntimeConfig, QwenRuntimeConfig)):
-             # 如果传入了不匹配的配置，报错
-             raise ModelConfigError(f"Invalid config type: {type(config)}. Expected OpenAIRuntimeConfig or QwenRuntimeConfig.")
+        if not isinstance(config, GlobalLLMConfig):
+             raise ModelConfigError(f"Invalid config type: {type(config)}. Expected GlobalLLMConfig.")
 
         # 2. 组装请求参数
         allowed_keys = {"role", "content", "name", "tool_calls", "tool_call_id"}
         messages_dicts = [m.model_dump(exclude_none=True, include=allowed_keys) for m in payload.messages]
         
+        temp = settings.openai.temperature
+        max_t = settings.openai.max_tokens
+        freq_p = settings.openai.frequency_penalty
+        
+        if config.provider == "qwen":
+            temp = settings.qwen.temperature
+            max_t = settings.qwen.max_tokens
+            freq_p = settings.qwen.frequency_penalty
+            
         kwargs = {
-            "model": config.model,
+            "model": config.model_id,
             "messages": messages_dicts,
             "stream": True,
             "stream_options": {"include_usage": True},
-            "temperature": config.temperature,
-            "max_tokens": config.max_tokens,
-            "frequency_penalty": config.frequency_penalty
+            "temperature": temp,
+            "max_tokens": max_t,
+            "frequency_penalty": freq_p
         }
         
         if payload.tools:
@@ -89,7 +95,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             if payload.tool_choice:
                 kwargs["tool_choice"] = payload.tool_choice
 
-        logger.info(f"Initiating OpenAI stream for model: {config.model}")
+        logger.info(f"Initiating OpenAI stream for model: {config.model_id}")
 
         # 3. 发起原生 SDK 请求
         sdk = self.get_sdk()

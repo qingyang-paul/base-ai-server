@@ -5,8 +5,9 @@ from loguru import logger
 from app.chat_service.core.llm_tools import registry, FuncName
 from app.chat_service.core.schema import (
     LLMTool, RoleType, LLMMessage, ChatHistory, LLMPayload, UserQuery, SessionContext, SOPPreference,
-    GenerationConfig, StreamReply, StatusEvent, StreamEventType, ToolCallChunkEvent, MessageChunkEvent, ToolCall, ToolCallFunction, StatisticEvent, RunFinishEvent
+    StreamReply, StatusEvent, StreamEventType, ToolCallChunkEvent, MessageChunkEvent, ToolCall, ToolCallFunction, StatisticEvent, RunFinishEvent
 )
+from app.subscription_service.core.config import GlobalLLMConfig
 from app.chat_service.core.config import settings
 from app.chat_service.core.llm_client_manager import llm_manager
 
@@ -19,7 +20,7 @@ class ChatService:
 
     async def stream_reply(
         self, 
-        runtime_config: GenerationConfig, 
+        runtime_config: GlobalLLMConfig, 
         payload: LLMPayload
     ) -> AsyncGenerator[StreamReply, None]:
         """
@@ -35,7 +36,7 @@ class ChatService:
             raise ProviderNotFoundError(f"Provider '{provider_name}' not found. Available: {list(llm_manager.providers.keys())}")
         
         # 2. 调用插件的 stream_reply 方法，原样透传给上层
-        logger.info(f"Using provider: {provider_name} for model: {runtime_config.model}")
+        logger.info(f"Using provider: {provider_name} for model: {runtime_config.model_id}")
         try:
             async for event in provider.stream_reply(config=runtime_config, payload=payload):
                 yield event
@@ -181,7 +182,7 @@ class ChatService:
             return f"Error executing tool '{tool_name}': {str(e)}"
 
     async def chat_stream_with_tools(
-        self, runtime_config: GenerationConfig, payload: LLMPayload, context_kwargs: dict = None
+        self, runtime_config: GlobalLLMConfig, payload: LLMPayload, context_kwargs: dict = None
     ) -> AsyncGenerator[StreamReply, None]:
         """Level 5: Agentic Loop (Core State Machine)"""
         if context_kwargs is None: context_kwargs = {}
@@ -193,7 +194,7 @@ class ChatService:
         # 用于记录本次用户query下，涉及的所有LLM生成的信息（工具调用，最终回复）及工具调用结果
         generated_messages: List[LLMMessage] = []
         
-        logger.info(f"Starting agent loop for model: {runtime_config.model}")
+        logger.info(f"Starting agent loop for model: {runtime_config.model_id}")
         
         # Get provider instance
         provider_name = runtime_config.provider

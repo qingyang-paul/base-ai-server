@@ -19,9 +19,10 @@ from app.chat_service.core.llm_providers.gemini_provider import GeminiProvider
 from app.chat_service.chat_service import ChatService
 from app.chat_service.core.llm_tools import registry
 from app.chat_service.core.schema import (
-    UserQuery, ChatHistory, SessionContext, QwenRuntimeConfig, GeminiRuntimeConfig,
+    UserQuery, ChatHistory, SessionContext,
     StreamEventType, RoleType
 )
+from app.subscription_service.core.config import GlobalLLMConfig
 
 # --- Define Local Tool ---
 class SumArgs(BaseModel):
@@ -74,7 +75,7 @@ async def test_tool_use():
     print("\n\n🧪 Testing Qwen Tool Use...")
     if "qwen" in llm_manager.providers:
         qwen_model = settings.qwen.model if hasattr(settings, 'qwen') and settings.qwen.model else "qwen-max"
-        config = QwenRuntimeConfig(provider="qwen", model=qwen_model)
+        config = GlobalLLMConfig(provider="qwen", model_id=qwen_model, base_prompt_ratio=0.01, base_completion_ratio=0.01)
         
         full_tool_args = ""
         tool_call_found = False
@@ -111,7 +112,7 @@ async def test_tool_use():
     if "gemini" in llm_manager.providers:
         # Force a capable model
         gemini_model = "gemini-2.0-flash" 
-        config = GeminiRuntimeConfig(provider="gemini", model=gemini_model)
+        config = GlobalLLMConfig(provider="gemini", model_id=gemini_model, base_prompt_ratio=0.01, base_completion_ratio=0.01)
         
         full_tool_args = ""
         tool_call_found = False

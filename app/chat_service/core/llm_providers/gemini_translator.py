@@ -5,9 +5,10 @@ from google.genai import types
 
 from app.chat_service.core.schema import (
     LLMMessage, 
-    RoleType, 
-    GenerationConfig
+    RoleType
 )
+from app.subscription_service.core.config import GlobalLLMConfig
+from app.chat_service.core.config import settings
 
 class GeminiTranslator:
     @staticmethod
@@ -163,13 +164,13 @@ class GeminiTranslator:
         return [types.Tool(function_declarations=function_declarations)]
 
     @staticmethod
-    def convert_generation_config(config: GenerationConfig) -> types.GenerateContentConfig:
+    def convert_generation_config(config: GlobalLLMConfig) -> types.GenerateContentConfig:
         """
-        Converts internal GenerationConfig to Gemini's types.GenerateContentConfig.
+        Converts internal GlobalLLMConfig to Gemini's types.GenerateContentConfig.
         """
         return types.GenerateContentConfig(
-            temperature=config.temperature,
-            max_output_tokens=config.max_output_tokens if hasattr(config, 'max_output_tokens') else None,
-            top_k=config.top_k if hasattr(config, 'top_k') else None,
+            temperature=settings.gemini.temperature,
+            max_output_tokens=settings.gemini.max_output_tokens,
+            top_k=settings.gemini.top_k,
             # Add other fields as needed
         )

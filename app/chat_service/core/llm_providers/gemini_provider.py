@@ -12,7 +12,6 @@ from app.chat_service.core.llm_providers.base import BaseLLMProvider
 from app.chat_service.core.llm_providers.gemini_translator import GeminiTranslator
 from app.chat_service.core.config import LLMClientConfig
 from app.chat_service.core.schema import (
-    GenerationConfig, 
     LLMPayload, 
     StreamReply, 
     MessageChunkEvent, 
@@ -21,6 +20,7 @@ from app.chat_service.core.schema import (
     RoleType,
     LLMMessage
 )
+from app.subscription_service.core.config import GlobalLLMConfig
 
 
 class GeminiProvider(BaseLLMProvider):
@@ -49,7 +49,7 @@ class GeminiProvider(BaseLLMProvider):
 
     async def stream_reply(
         self, 
-        config: GenerationConfig, 
+        config: GlobalLLMConfig, 
         payload: LLMPayload
     ) -> AsyncGenerator[StreamReply, None]:
         
@@ -74,7 +74,7 @@ class GeminiProvider(BaseLLMProvider):
             # model argument in new SDK
             # Use .aio for async operations
             response_stream = await self.client.aio.models.generate_content_stream(
-                model=config.model,
+                model=config.model_id,
                 contents=contents,
                 config=gemini_config
             )

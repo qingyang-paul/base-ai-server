@@ -8,9 +8,9 @@ from app.chat_service.core.llm_client_manager import llm_manager
 from app.chat_service.core.llm_providers.openai_provider import OpenAICompatibleProvider
 from app.chat_service.core.llm_providers.qwen_provider import QwenProvider
 from app.chat_service.core.schema import (
-    GenerationConfig, UserQuery, ChatHistory, SessionContext, 
-    QwenRuntimeConfig, StreamEventType
+    UserQuery, ChatHistory, SessionContext, StreamEventType
 )
+from app.subscription_service.core.config import GlobalLLMConfig
 from app.chat_service.core.llm_tools import registry
 from pydantic import BaseModel, Field
 
@@ -52,7 +52,7 @@ async def test_agent_loop_qwen(setup_real_env):
     """
     settings = setup_real_env
     provider_name = "qwen"
-    runtime_config_cls = QwenRuntimeConfig
+    runtime_config_cls = GlobalLLMConfig
     
     # Skip if API key is missing
     provider_config = getattr(settings, provider_name, None)
@@ -77,7 +77,12 @@ async def test_agent_loop_qwen(setup_real_env):
     )
     
     # 2. Runtime Config
-    runtime_config = runtime_config_cls()
+    runtime_config = runtime_config_cls(
+        model_id="qwen-max",
+        provider="qwen",
+        base_prompt_ratio=0.01,
+        base_completion_ratio=0.01
+    )
     
     # 3. Run Loop
     print(f"\n\n--- Testing Provider: {provider_name} ---")

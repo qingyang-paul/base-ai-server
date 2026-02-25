@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator
 
-from app.chat_service.core.schema import GenerationConfig, LLMPayload, StreamReply
+from app.subscription_service.core.config import GlobalLLMConfig
+from app.chat_service.core.schema import LLMPayload, StreamReply
 
 
 class BaseLLMProvider(ABC):
@@ -24,7 +25,7 @@ class BaseLLMProvider(ABC):
 
     @abstractmethod
     async def stream_reply(
-        self, config: GenerationConfig, payload: LLMPayload
+        self, config: GlobalLLMConfig, payload: LLMPayload
     ) -> AsyncGenerator[StreamReply, None]:
         """
         接收标准参数，返回标准事件流。

@@ -2,16 +2,17 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from app.chat_service.chat_service import ChatService
 from app.chat_service.core.schema import (
-    GenerationConfig, LLMPayload, StreamEventType, MessageChunkEvent, 
+    LLMPayload, StreamEventType, MessageChunkEvent, 
     ToolCallChunkEvent, StatusEvent, RoleType, LLMMessage, ToolCall, ToolCallFunction, RunFinishEvent
 )
+from app.subscription_service.core.config import GlobalLLMConfig
 from app.chat_service.core.llm_tools import registry
 from pydantic import BaseModel
 
 # Mock Config
 class MockRuntimeConfig(BaseModel):
     provider: str = "mock_provider"
-    model: str = "mock_model"
+    model_id: str = "mock_model"
 
 # Mock Tool
 class MockToolArgs(BaseModel):

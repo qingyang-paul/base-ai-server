@@ -7,9 +7,9 @@ from app.chat_service.core.config import Settings
 from app.chat_service.core.llm_client_manager import llm_manager
 from app.chat_service.core.llm_providers.gemini_provider import GeminiProvider
 from app.chat_service.core.schema import (
-    GenerationConfig, UserQuery, ChatHistory, SessionContext, 
-    GeminiRuntimeConfig, StreamEventType
+    UserQuery, ChatHistory, SessionContext, StreamEventType
 )
+from app.subscription_service.core.config import GlobalLLMConfig
 from app.chat_service.core.llm_tools import registry
 from pydantic import BaseModel, Field
 
@@ -49,7 +49,7 @@ async def test_agent_loop_gemini(setup_real_env):
     """
     settings = setup_real_env
     provider_name = "gemini"
-    runtime_config_cls = GeminiRuntimeConfig
+    runtime_config_cls = GlobalLLMConfig
     
     # Use known stable model if needed, but for now rely on xfail if it still fails
     # settings.gemini.model = "gemini-1.5-flash" 
@@ -81,8 +81,12 @@ async def test_agent_loop_gemini(setup_real_env):
     )
     
     # 2. Runtime Config
-    runtime_config = runtime_config_cls()
-    runtime_config.model = "gemini-2.0-flash" # Use valid model from list
+    runtime_config = runtime_config_cls(
+        model_id="gemini-2.0-flash",
+        provider="gemini",
+        base_prompt_ratio=0.01,
+        base_completion_ratio=0.01
+    )
     
     # 3. Run Loop
     print(f"\n\n--- Testing Provider: {provider_name} ---")

@@ -127,27 +127,3 @@ StreamReply = Union[
     RunFinishEvent
 ]
 
-class OpenAIRuntimeConfig(BaseModel):
-    provider: Literal["openai"] = "openai"
-    model: str = Field(default_factory=lambda: settings.openai.model)
-    temperature: float = Field(default_factory=lambda: settings.openai.temperature)
-    max_tokens: int = Field(default_factory=lambda: settings.openai.max_tokens)
-    frequency_penalty: float = Field(default_factory=lambda: settings.openai.frequency_penalty)
-
-class GeminiRuntimeConfig(BaseModel):
-    provider: Literal["gemini"] = "gemini"
-    model: str = Field(default_factory=lambda: settings.gemini.model)
-    temperature: float = Field(default_factory=lambda: settings.gemini.temperature)
-    top_k: int = Field(default_factory=lambda: settings.gemini.top_k)
-    max_output_tokens: int = Field(default_factory=lambda: settings.gemini.max_output_tokens)
-
-class QwenRuntimeConfig(BaseModel):
-    provider: Literal["qwen"] = "qwen"
-    model: str = Field(default_factory=lambda: settings.qwen.model)
-    temperature: float = Field(default_factory=lambda: settings.qwen.temperature)
-    max_tokens: int = Field(default_factory=lambda: settings.qwen.max_tokens)
-    frequency_penalty: float = Field(default_factory=lambda: settings.qwen.frequency_penalty)
-    top_k: int = Field(default_factory=lambda: settings.qwen.top_k)
-    max_output_tokens: int = Field(default_factory=lambda: settings.qwen.max_output_tokens)
-# Union for runtime config
-GenerationConfig = Union[OpenAIRuntimeConfig, GeminiRuntimeConfig, QwenRuntimeConfig]
