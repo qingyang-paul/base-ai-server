@@ -11,6 +11,8 @@ from app.core.telemetry import setup_telemetry, shutdown_telemetry
 from app.auth_service.core.limiter import init_limiter
 from app.taskiq import broker
 from sqlalchemy.ext.asyncio import create_async_engine
+from app.session_service.core.prompt_registry import PromptRegistry
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """管理 logger、telemetry、Redis、Postgres 的生命周期。"""
@@ -44,6 +46,10 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing Rate Limiter...")
     await init_limiter(redis_pool)
 
+    # 初始化 PromptRegistry
+    logger.info("Initializing PromptRegistry...")
+    PromptRegistry.initialize()
+
     # 启动 Taskiq Broker
     if not broker.is_worker_process:
         logger.info("Starting Taskiq Broker...")
@@ -51,6 +57,8 @@ async def lifespan(app: FastAPI):
         import app.auth_service.tasks.send_email
         import app.subscription_service.tasks.init_user_subscription
         import app.subscription_service.tasks.reset_expired_subscriptions_and_credits
+        import app.session_service.tasks.cleanup_inactive_sessions
+        import app.session_service.tasks.persist_session_buffer
         await broker.startup()
 
     # ================================
