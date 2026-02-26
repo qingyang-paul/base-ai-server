@@ -32,6 +32,8 @@ from app.chat_service.chat_service import ChatService
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.subscription_service.subscription_repo import SubscriptionRepo
 from app.subscription_service.subscription_service import SubscriptionService
+from app.session_service.session_repo import SessionRepo
+from app.session_service.session_service import SessionService
 
 async def get_db_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
     '''从 SQLAlchemy Engine 获取一个 Session'''
@@ -63,3 +65,15 @@ async def get_subscription_service(
 
 async def get_chat_service() -> ChatService:
     return ChatService()
+
+async def get_session_repo(
+    session: AsyncSession = Depends(get_db_session),
+    redis: Redis = Depends(get_redis)
+) -> SessionRepo:
+    return SessionRepo(redis_client=redis, db_session=session)
+
+async def get_session_service(
+    repo: SessionRepo = Depends(get_session_repo),
+    chat_service: ChatService = Depends(get_chat_service)
+) -> SessionService:
+    return SessionService(repo=repo, chat_service=chat_service)
