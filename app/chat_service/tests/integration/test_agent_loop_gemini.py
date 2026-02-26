@@ -28,7 +28,6 @@ async def setup_real_env():
     
     # Register providers
     if settings.gemini and settings.gemini.api_key:
-        settings.gemini.model = "gemini-1.5-flash"  # Override to stable model
         llm_manager.register("gemini", GeminiProvider(settings.gemini))
         
     # Register Tool

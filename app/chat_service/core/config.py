@@ -1,23 +1,15 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class LLMClientConfig(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+
     limits_max_connections: int = Field(default=100)
     limits_keepalive: int = Field(default=20)
     timeout: float = Field(default=30.0)
     api_key: str = Field(..., description="必须配置 API KEY")
     base_url: str | None = Field(default=None, description="自定义的第三方 API 网关/代理地址")
-
-    # Default Generation Params
-    model: str = Field(..., description="必须选择模型")
-    temperature: float = Field(default=1.0)
-    max_tokens: int = Field(default=8192)
-    
-    # Provider Specific Defaults (Optional)
-    frequency_penalty: float = Field(default=0.0) # OpenAI
-    top_k: int = Field(default=40)                # Gemini
-    max_output_tokens: int = Field(default=8192)  # Gemini
 
 
 class Settings(BaseSettings):

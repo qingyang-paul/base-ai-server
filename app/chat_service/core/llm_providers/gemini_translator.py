@@ -169,8 +169,7 @@ class GeminiTranslator:
         Converts internal GlobalLLMConfig to Gemini's types.GenerateContentConfig.
         """
         return types.GenerateContentConfig(
-            temperature=settings.gemini.temperature,
-            max_output_tokens=settings.gemini.max_output_tokens,
-            top_k=settings.gemini.top_k,
+            temperature=config.temperature,
+            max_output_tokens=config.max_tokens_per_request,
             # Add other fields as needed
         )

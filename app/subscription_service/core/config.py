@@ -1,33 +1,44 @@
 from pydantic import BaseModel, Field
 from typing import Literal, Dict, List, Optional
+from app.chat_service.core.llm_tools import FuncName
 
 # ==========================================
 # 1. 全局模型注册表 (Single Source of Truth)
 # ==========================================
 class GlobalLLMConfig(BaseModel):
     model_id: str
-    provider: Literal['openai', 'anthropic', 'gemini'] 
+    provider: Literal['openai', 'anthropic', 'gemini', 'qwen'] 
     base_prompt_ratio: float = Field(..., description="基准输入费率")
     base_completion_ratio: float = Field(..., description="基准输出费率")
     max_tokens_per_request: int = Field(default=4096)
+    temperature: float = Field(default=1.0)
 
 # 物理模型只在这里定义一次
 MODEL_REGISTRY: Dict[str, GlobalLLMConfig] = {
     "gpt-4-turbo": GlobalLLMConfig(
         model_id="gpt-4-turbo", provider="openai",
-        base_prompt_ratio=0.01, base_completion_ratio=0.03, max_tokens_per_request=8192
+        base_prompt_ratio=0.01, base_completion_ratio=0.03, max_tokens_per_request=8192,
+        temperature=1.0
     ),
     "gemini-3-flash-preview": GlobalLLMConfig(
         model_id="gemini-3-flash-preview", provider="gemini",
-        base_prompt_ratio=0.015, base_completion_ratio=0.075, max_tokens_per_request=8192
+        base_prompt_ratio=0.015, base_completion_ratio=0.075, max_tokens_per_request=8192,
+        temperature=1.0
     ),
     "gemini-3-pro-preview": GlobalLLMConfig(
         model_id="gemini-3-pro-preview", provider="gemini",
-        base_prompt_ratio=0.015, base_completion_ratio=0.075, max_tokens_per_request=8192
+        base_prompt_ratio=0.015, base_completion_ratio=0.075, max_tokens_per_request=8192,
+        temperature=1.0
     ),
     "gemini-3.1-pro-preview": GlobalLLMConfig(
         model_id="gemini-3.1-pro-preview", provider="gemini",
-        base_prompt_ratio=0.015, base_completion_ratio=0.075, max_tokens_per_request=8192
+        base_prompt_ratio=0.015, base_completion_ratio=0.075, max_tokens_per_request=8192,
+        temperature=1.0
+    ),
+    "qwen": GlobalLLMConfig(
+        model_id="Qwen3-VL-235B-A22B-Instruct", provider="qwen",
+        base_prompt_ratio=0.01, base_completion_ratio=0.03, max_tokens_per_request=8192,
+        temperature=1.0
     )
 }
 
@@ -51,7 +62,7 @@ class PlanConfig(BaseModel):
         description="特例：覆盖特定模型的基础费率"
     )
     
-    allowed_tools: List[str] = Field(default_factory=list)
+    allowed_tools: List[FuncName] = Field(default_factory=list)
 
 # 商业套餐配置变得极其清爽
 PLAN_REGISTRY: Dict[str, PlanConfig] = {
@@ -59,14 +70,14 @@ PLAN_REGISTRY: Dict[str, PlanConfig] = {
         name="Free Plan",
         base_credits=300, # 每个月的默认配额
         default_model="gemini-3.1-pro-preview",
-        allowed_models=["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-3.1-pro-preview"],
+        allowed_models=["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-3.1-pro-preview", "Qwen3-VL-235B-A22B-Inst"],
         allowed_tools=[]
     ),
     "pro": PlanConfig(
         name="Pro Plan",
         base_credits=1000, # 每个月的默认配额
         default_model="gemini-3.1-pro-preview",
-        allowed_models=["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-3.1-pro-preview"],
+        allowed_models=["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-3.1-pro-preview", "Qwen3-VL-235B-A22B-Inst"],
         allowed_tools=[]
     )
 }

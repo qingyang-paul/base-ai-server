@@ -76,9 +76,11 @@ async def test_agent_loop_qwen(setup_real_env):
         allowed_tools=allowed_tools
     )
     
+    qwen_model = "qwen-turbo"
+    
     # 2. Runtime Config
     runtime_config = runtime_config_cls(
-        model_id="qwen-max",
+        model_id=qwen_model,
         provider="qwen",
         base_prompt_ratio=0.01,
         base_completion_ratio=0.01

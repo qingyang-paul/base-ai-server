@@ -71,23 +71,13 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         allowed_keys = {"role", "content", "name", "tool_calls", "tool_call_id"}
         messages_dicts = [m.model_dump(exclude_none=True, include=allowed_keys) for m in payload.messages]
         
-        temp = settings.openai.temperature
-        max_t = settings.openai.max_tokens
-        freq_p = settings.openai.frequency_penalty
-        
-        if config.provider == "qwen":
-            temp = settings.qwen.temperature
-            max_t = settings.qwen.max_tokens
-            freq_p = settings.qwen.frequency_penalty
-            
         kwargs = {
             "model": config.model_id,
             "messages": messages_dicts,
             "stream": True,
             "stream_options": {"include_usage": True},
-            "temperature": temp,
-            "max_tokens": max_t,
-            "frequency_penalty": freq_p
+            "temperature": config.temperature,
+            "max_tokens": config.max_tokens_per_request
         }
         
         if payload.tools:
@@ -96,6 +86,8 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                 kwargs["tool_choice"] = payload.tool_choice
 
         logger.info(f"Initiating OpenAI stream for model: {config.model_id}")
+        
+        print(f"DEBUG: Qwen Request kwargs: {kwargs}")
 
         # 3. 发起原生 SDK 请求
         sdk = self.get_sdk()
@@ -107,6 +99,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
 
         # 4. 翻译网络流 
         async for chunk in stream:
+            print("DEBUG CHUNK:", chunk)
             # Check for usage metadata (typically in the last chunk when stream_options={"include_usage": True} is passed)
             if getattr(chunk, 'usage', None):
                 input_tokens = chunk.usage.prompt_tokens

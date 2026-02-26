@@ -74,7 +74,7 @@ async def test_tool_use():
     # ==========================
     print("\n\n🧪 Testing Qwen Tool Use...")
     if "qwen" in llm_manager.providers:
-        qwen_model = settings.qwen.model if hasattr(settings, 'qwen') and settings.qwen.model else "qwen-max"
+        qwen_model = "qwen-turbo"
         config = GlobalLLMConfig(provider="qwen", model_id=qwen_model, base_prompt_ratio=0.01, base_completion_ratio=0.01)
         
         full_tool_args = ""

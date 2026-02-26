@@ -30,14 +30,14 @@ async def test_providers():
     
     # Register Gemini
     if hasattr(settings, 'gemini') and settings.gemini:
-        print(f"Registering Gemini Provider with model: {settings.gemini.model}")
+        print("Registering Gemini Provider")
         llm_manager.register("gemini", GeminiProvider(settings.gemini))
     else:
         print("❌ Gemini settings not found")
 
     # Register Qwen
     if hasattr(settings, 'qwen') and settings.qwen:
-        print(f"Registering Qwen Provider with output model: {settings.qwen.model}")
+        print("Registering Qwen Provider")
         llm_manager.register("qwen", OpenAICompatibleProvider(settings.qwen))
     else:
         print("❌ Qwen settings not found")
@@ -56,7 +56,7 @@ async def test_providers():
         )
         
         # For Qwen, we now use QwenRuntimeConfig
-        qwen_model = settings.qwen.model if hasattr(settings, 'qwen') and settings.qwen.model else "qwen-max"
+        qwen_model = "qwen-turbo"
         
         config = GlobalLLMConfig(
             provider="qwen", 
