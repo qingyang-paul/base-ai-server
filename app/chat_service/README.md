@@ -1,132 +1,90 @@
-# Chat Service Module
+# Chat Service Module (聊天服务模块)
 
-该模块负责聊天服务的核心逻辑（单次请求），包括 LLM 交互、工具调用、流式响应等。
-
-## 1. 注册新工具 (Add New Tool)
-
-要注册一个新的工具供 LLM 使用，需要完成以下步骤：
-
-### 1.1 定义枚举名称
-
-在 `app/chat_service/core/llm_tools.py` 中，向 `FuncName` 枚举添加新的工具名称。
-
-```python
-# app/chat_service/core/llm_tools.py
-
-class FuncName(str, Enum):
-    # ... existing tools ...
-    GET_WEATHER = "get_weather"
-    SEARCH_WEB = "search_web"
-    GET_USER_ORDERS = "get_user_orders"
-    NEW_TOOL_NAME = "new_tool_name"  # <--- 新增
-```
-
-### 1.2 使用装饰器注册实现
-
-在同一文件 (`app/chat_service/core/llm_tools.py`) 或其他模块导入 `registry` 并使用 `@registry.register` 装饰器注册函数。
-
-```python
-# app/chat_service/core/llm_tools.py
-
-from pydantic import BaseModel, Field
-
-# 1. 定义参数 Schema
-class NewToolArgs(BaseModel):
-    query: str = Field(..., description="The search query")
-    limit: int = Field(default=5, description="Max results")
-
-# 2. 注册工具
-@registry.register(
-    name=FuncName.NEW_TOOL_NAME.value, 
-    description="Description of what this tool does.", 
-    args_schema=NewToolArgs
-)
-async def new_tool_implementation(query: str, limit: int = 5) -> str:
-    # 实现业务逻辑
-    return f"Search results for {query}: ..."
-```
+该模块负责 AI 聊天服务的核心处理逻辑，囊括了与各大 LLM 提供商 (如 OpenAI, Gemini, Qwen) 的交互、本地工具 (Function Calling) 的调用、连接池管理以及流式响应的处理。
 
 ---
 
-## 2. 配置新模型 (Configure New Model)
+## 1. 模块的配置方式 (Configuration)
 
-当接入新的模型提供商（如 Kimi, DeepSeek 等）或同一提供商的新模型时，需要涉及以下文件的修改：
+该模块的核心配置位于 `app/chat_service/core/config.py`，主要依赖基于 Pydantic 的 `Settings` 模型。系统的 LLM 行为及各项限制（如模型参数）会部分或全部委托给统一配置模块。
 
-### 2.1 添加配置字段
+### 1.1 环境变量注入
 
-在 `app/chat_service/core/config.py` 的 `Settings` 类中添加对应的配置项。
+所有的客户端配置 (`LLMClientConfig`) 会通过 Pydantic Settings 自动从环境 (`.env`) 中提取。
+由于启用了嵌套分隔符 (`env_nested_delimiter='__'`)，在配置时应使用**双下划线**：
 
-```python
-# app/chat_service/core/config.py
+- `OPENAI__API_KEY=sk-xxxx`
+- `GEMINI__API_KEY=AIzaSy...`
+- `QWEN__BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
 
-class Settings(BaseSettings):
-    openai: LLMClientConfig
-    gemini: LLMClientConfig
-    qwen: LLMClientConfig
-    
-    # 新增 Kimi 配置
-    kimi: LLMClientConfig  # <--- 新增
-    
-    model_config = SettingsConfigDict(env_nested_delimiter='__', env_file='.env', extra='ignore')
-```
+### 1.2 修改配置的注意事项
 
-### 2.2 定义运行时配置 (Runtime Config)
+- **配置优先级与管理**：确保所有敏感数据 (API Key) 一定只能通过环境变量输入，**严禁硬编码**，否则会被忽略。
+- **第三方代理配置**：如果需要统一走国内的第三方 API 网关，只需要配置对应的 `[PROVIDER]__BASE_URL` 字段即可。
+- **全局参数分离**：与具体的连接配置(限流、超时)不同，LLM 请求中的具体生成参数 (如同一个请求用什么具体的 `model名称` , `temperature`等) 会通过全局范围的 `GlobalLLMConfig` 提供。在配置客户端层面时关注的是“如何连通”而并非“用什么系统 prompt 发言”。
 
-在 `app/chat_service/core/schema.py` 中定义新的 `RuntimeConfig` 模型，并将其加入 `GenerationConfig` 联合类型。
+---
 
-```python
-# app/chat_service/core/schema.py
+## 2. 如何注册 LLM 客户端 (Register LLM Client)
 
-# 1. 定义新的 RuntimeConfig
-class KimiRuntimeConfig(BaseModel):
-    provider: Literal["kimi"] = "kimi"
-    # 使用 default_factory 从 settings 读取默认值
-    model: str = Field(default_factory=lambda: settings.kimi.model)
-    temperature: float = Field(default_factory=lambda: settings.kimi.temperature)
-    max_tokens: int = Field(default_factory=lambda: settings.kimi.max_tokens)
-    # ... 其他特定参数
+客户端的生命周期（注册、启动、关闭）由 `app/chat_service/core/llm_client_manager.py` 下的全局单例 `llm_manager` 管理。
 
-# 2. 更新 GenerationConfig Union
-GenerationConfig = Union[
-    OpenAIRuntimeConfig, 
-    GeminiRuntimeConfig, 
-    QwenRuntimeConfig, 
-    KimiRuntimeConfig  # <--- 新增
-]
-```
+### 2.1 注册步骤
 
-### 2.3 更新 Provider 校验
+1. **实现 Provider**：继承并实现 `BaseLLMProvider` 抽象类（例如 `OpenAIProvider`, `GeminiProvider`），需自行管理底层异步客户端 (Async Client) 实例并在 `startup()` 和 `shutdown()` 里实现相关逻辑。
+2. **注册到管理器**：在应用生命周期加载期间 (如 `lifespan.py`) 需要调用 `register` 挂载实例：
 
-如果该模型使用 OpenAI 兼容协议（通常是），则需要在 `app/chat_service/core/llm_providers/openai_provider.py` 中允许该配置类型。
+   ```python
+   from app.chat_service.core.llm_client_manager import llm_manager
+   from app.chat_service.core.config import settings
+   
+   # 实例化你的 Provider (需要传递设置)
+   my_provider = MyNewAPIProvider(config=settings.my_new_llm)
+   
+   # 注册
+   llm_manager.register("my_new_llm", my_provider)
+   ```
 
-```python
-# app/chat_service/core/llm_providers/openai_provider.py
+3. **获取客户端调用**：随后在具体业务路由中，可通过 `llm_manager.get_sdk("my_new_llm")` 获取底层的具体异步客户端用于发请求，或直接调用 `llm_manager.get_provider(...)` 使用 Provider 的标准化接口封装。
+4. **生命周期自动管理**：当程序启动和停止时，自动遍历并调用已经注册好的提供商的 `.startup()` 与 `.shutdown()` 方法。
 
-from app.chat_service.core.schema import (
-    # ...
-    KimiRuntimeConfig  # <--- 导入
-)
+---
 
-class OpenAICompatibleProvider(BaseLLMProvider):
-    # ...
-    
-    async def stream_reply(self, config: GenerationConfig, payload: LLMPayload, ...):
-        # ...
-        
-        # 1. 确保 config 类型正确
-        if not isinstance(config, (OpenAIRuntimeConfig, QwenRuntimeConfig, KimiRuntimeConfig)): # <--- 添加判断
-             raise ModelConfigError(f"Invalid config type: {type(config)}...")
-             
-        # ...
-```
+## 3. 如何注册本地工具 (Register Tools)
 
-### 2.4 注册 Provider
+该模块支持标准的 Function Calling 工具挂载，由 `app/chat_service/core/llm_tools.py` 的全局登记册 (`registry`) 统一收口与分发。
 
-最后，在 `app/core/lifespan.py` 或 `llm_client_manager` 初始化的地方注册该 Provider 实例。
+### 3.1 注册步骤
 
-```python
-# app/core/lifespan.py
+1. **注册唯一枚举**：首先必须向 `FuncName` 枚举追加新工具标识。
 
-if hasattr(settings, 'kimi') and settings.kimi:
-    llm_manager.register("kimi", OpenAICompatibleProvider(settings.kimi))
-```
+   ```python
+   class FuncName(str, Enum):
+       # ...
+       NEW_FEATURE_TOOL = "new_feature_tool"
+   ```
+
+2. **定义 Pydantic 入参 Schema**：向 LLM 清晰表达该工具如果被调用，需要输出什么格式的 JSON 参数。
+
+   ```python
+   from pydantic import BaseModel, Field
+   class NewFeatureArgs(BaseModel):
+       query: str = Field(..., description="用户搜索的查询语句")
+   ```
+
+3. **使用 `@registry.register` 标记实现函数**：将需要给 AI 提供的方法挂载，使其可寻址。
+
+   ```python
+   from app.chat_service.core.llm_tools import registry, FuncName
+   
+   @registry.register(
+       name=FuncName.NEW_FEATURE_TOOL.value,
+       description="当用户询问XX信息时，使用此工具进行数据查找。",
+       args_schema=NewFeatureArgs
+   )
+   async def handle_new_feature(query: str):
+       # 具体后台业务逻辑
+       return {"status": "success", "result": f"Answer for {query}"}
+   ```
+
+注册完毕后，在发送给 LLM 支持函数的 Prompt 时，可以自动通过 `registry.get_tool(...)` 序列化提取其 schema 发过去，在 LLM 选择调用工具时系统反向执行所挂载的 async function。
