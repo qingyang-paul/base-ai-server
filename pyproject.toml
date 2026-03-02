@@ -1,0 +1,43 @@
+[project]
+name = "baseaiserver"
+version = "0.1.0"
+description = "AI Server Infrastructure"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "loguru>=0.7.0",
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
+    "opentelemetry-instrumentation-fastapi>=0.41b0",
+    "opentelemetry-instrumentation-httpx>=0.41b0",
+    "redis>=5.0.0",
+    "asyncpg>=0.29.0",
+    "python-jose>=3.5.0",
+    "cryptography>=46.0.5",
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt==4.0.1",
+    "fastapi-limiter==0.1.6",
+    "sqlalchemy[asyncio]>=2.0.0",
+    "taskiq>=0.12.1",
+    "taskiq-fastapi>=0.4.0",
+    "taskiq-redis>=1.2.2",
+    "email-validator>=2.3.0",
+    "aiosmtplib>=5.1.0",
+    "openai>=2.21.0",
+    "google-generativeai>=0.8.6",
+    "google-genai>=1.64.0",
+    "sse-starlette>=3.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.27.0",
+    "testcontainers[postgres,redis]>=4.0.0",
+]
