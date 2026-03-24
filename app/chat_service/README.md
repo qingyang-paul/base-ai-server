@@ -1,62 +1,62 @@
-# Chat Service Module (聊天服务模块)
+# Chat Service Module
 
-该模块负责 AI 聊天服务的核心处理逻辑，囊括了与各大 LLM 提供商 (如 OpenAI, Gemini, Qwen) 的交互、本地工具 (Function Calling) 的调用、连接池管理以及流式响应的处理。
+This module is responsible for the core processing logic of AI chat services, encompassing interactions with major LLM providers (e.g., OpenAI, Gemini, Qwen), local tool (Function Calling) invocations, connection pool management, and streaming response handling.
 
 ---
 
-## 1. 模块的配置方式 (Configuration)
+## 1. Module Configuration
 
-该模块的核心配置位于 `app/chat_service/core/config.py`，主要依赖基于 Pydantic 的 `Settings` 模型。系统的 LLM 行为及各项限制（如模型参数）会部分或全部委托给统一配置模块。
+The core configuration for this module is located in `app/chat_service/core/config.py`, primarily relying on the Pydantic-based `Settings` model. The system's LLM behavior and various constraints (like model parameters) will be partially or fully delegated to the unified configuration module.
 
-### 1.1 环境变量注入
+### 1.1 Environment Variable Injection
 
-所有的客户端配置 (`LLMClientConfig`) 会通过 Pydantic Settings 自动从环境 (`.env`) 中提取。
-由于启用了嵌套分隔符 (`env_nested_delimiter='__'`)，在配置时应使用**双下划线**：
+All client configurations (`LLMClientConfig`) will be automatically extracted from the environment (`.env`) via Pydantic Settings.
+Because a nested delimiter is enabled (`env_nested_delimiter='__'`), **double underscores** should be used during configuration:
 
 - `OPENAI__API_KEY=sk-xxxx`
 - `GEMINI__API_KEY=AIzaSy...`
 - `QWEN__BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
 
-### 1.2 修改配置的注意事项
+### 1.2 Configuration Considerations
 
-- **配置优先级与管理**：确保所有敏感数据 (API Key) 一定只能通过环境变量输入，**严禁硬编码**，否则会被忽略。
-- **第三方代理配置**：如果需要统一走国内的第三方 API 网关，只需要配置对应的 `[PROVIDER]__BASE_URL` 字段即可。
-- **全局参数分离**：与具体的连接配置(限流、超时)不同，LLM 请求中的具体生成参数 (如同一个请求用什么具体的 `model名称` , `temperature`等) 会通过全局范围的 `GlobalLLMConfig` 提供。在配置客户端层面时关注的是“如何连通”而并非“用什么系统 prompt 发言”。
+- **Configuration Priority and Management**: Ensure that all sensitive data (API Keys) is ONLY input through environment variables. **Hardcoding is strictly prohibited**, otherwise, it will be ignored.
+- **Third-Party Proxy Configuration**: If you need to uniformly route through domestic third-party API gateways, you only need to configure the corresponding `[PROVIDER]__BASE_URL` field.
+- **Global Parameter Separation**: Unlike specific connection configurations (rate limiting, timeout), the specific generation parameters in an LLM request (like what specific `model name`, `temperature`, etc., are used for the same request) are provided through the global scope `GlobalLLMConfig`. When configuring at the client level, the focus is "how to connect" rather than "what system prompt to use for speaking".
 
 ---
 
-## 2. 如何注册 LLM 客户端 (Register LLM Client)
+## 2. Register LLM Client
 
-客户端的生命周期（注册、启动、关闭）由 `app/chat_service/core/llm_client_manager.py` 下的全局单例 `llm_manager` 管理。
+The lifecycle (registration, startup, shutdown) of clients is managed by the global singleton `llm_manager` under `app/chat_service/core/llm_client_manager.py`.
 
-### 2.1 注册步骤
+### 2.1 Registration Steps
 
-1. **实现 Provider**：继承并实现 `BaseLLMProvider` 抽象类（例如 `OpenAIProvider`, `GeminiProvider`），需自行管理底层异步客户端 (Async Client) 实例并在 `startup()` 和 `shutdown()` 里实现相关逻辑。
-2. **注册到管理器**：在应用生命周期加载期间 (如 `lifespan.py`) 需要调用 `register` 挂载实例：
+1. **Implement Provider**: Inherit from and implement the `BaseLLMProvider` abstract class (e.g., `OpenAIProvider`, `GeminiProvider`). You must manage the underlying asynchronous client (Async Client) instance yourself and implement related logic in `startup()` and `shutdown()`.
+2. **Register to Manager**: During application lifecycle loading (e.g., `lifespan.py`), you need to call `register` to mount the instance:
 
    ```python
    from app.chat_service.core.llm_client_manager import llm_manager
    from app.chat_service.core.config import settings
    
-   # 实例化你的 Provider (需要传递设置)
+   # Instantiate your Provider (requires passing settings)
    my_provider = MyNewAPIProvider(config=settings.my_new_llm)
    
-   # 注册
+   # Register
    llm_manager.register("my_new_llm", my_provider)
    ```
 
-3. **获取客户端调用**：随后在具体业务路由中，可通过 `llm_manager.get_sdk("my_new_llm")` 获取底层的具体异步客户端用于发请求，或直接调用 `llm_manager.get_provider(...)` 使用 Provider 的标准化接口封装。
-4. **生命周期自动管理**：当程序启动和停止时，自动遍历并调用已经注册好的提供商的 `.startup()` 与 `.shutdown()` 方法。
+3. **Retrieve Client for Invocation**: Subsequently, in specific business routes, you can retrieve the underlying specific asynchronous client for sending requests via `llm_manager.get_sdk("my_new_llm")`, or directly call `llm_manager.get_provider(...)` to use the standardized interface wrapper of the Provider.
+4. **Automatic Lifecycle Management**: When the program starts and stops, it automatically iterates through and calls the `.startup()` and `.shutdown()` methods of the already registered providers.
 
 ---
 
-## 3. 如何注册本地工具 (Register Tools)
+## 3. Register Tools
 
-该模块支持标准的 Function Calling 工具挂载，由 `app/chat_service/core/llm_tools.py` 的全局登记册 (`registry`) 统一收口与分发。
+This module supports standard Function Calling tool mounting, centrally unified and dispatched by the global registry (`registry`) in `app/chat_service/core/llm_tools.py`.
 
-### 3.1 注册步骤
+### 3.1 Registration Steps
 
-1. **注册唯一枚举**：首先必须向 `FuncName` 枚举追加新工具标识。
+1. **Register Unique Enum**: First, a new tool identifier must be appended to the `FuncName` enumeration.
 
    ```python
    class FuncName(str, Enum):
@@ -64,27 +64,27 @@
        NEW_FEATURE_TOOL = "new_feature_tool"
    ```
 
-2. **定义 Pydantic 入参 Schema**：向 LLM 清晰表达该工具如果被调用，需要输出什么格式的 JSON 参数。
+2. **Define Pydantic Input Schema**: Clearly express to the LLM what formatted JSON parameters are required to be output if this tool is called.
 
    ```python
    from pydantic import BaseModel, Field
    class NewFeatureArgs(BaseModel):
-       query: str = Field(..., description="用户搜索的查询语句")
+       query: str = Field(..., description="Query statement searched by the user")
    ```
 
-3. **使用 `@registry.register` 标记实现函数**：将需要给 AI 提供的方法挂载，使其可寻址。
+3. **Mark Implementation Function with `@registry.register`**: Mount the method to be provided to the AI, making it addressable.
 
    ```python
    from app.chat_service.core.llm_tools import registry, FuncName
    
    @registry.register(
        name=FuncName.NEW_FEATURE_TOOL.value,
-       description="当用户询问XX信息时，使用此工具进行数据查找。",
+       description="When a user asks for XX information, use this tool to search for data.",
        args_schema=NewFeatureArgs
    )
    async def handle_new_feature(query: str):
-       # 具体后台业务逻辑
+       # Specific background business logic
        return {"status": "success", "result": f"Answer for {query}"}
    ```
 
-注册完毕后，在发送给 LLM 支持函数的 Prompt 时，可以自动通过 `registry.get_tool(...)` 序列化提取其 schema 发过去，在 LLM 选择调用工具时系统反向执行所挂载的 async function。
+After registration is complete, when sending the Prompt supporting functions to the LLM, its schema can be automatically serialized and extracted via `registry.get_tool(...)` to be sent over. When the LLM chooses to call the tool, the system reversely executes the mounted async function.
